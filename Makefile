@@ -665,8 +665,10 @@ KBUILD_CPPFLAGS += $(call cc-option, -fno-pie)
 KBUILD_CFLAGS	+= -Ofast -fno-inline-functions -fno-pic -fno-ipa-cp-clone -Wno-maybe-uninitialized
 KBUILD_CFLAGS	+= $(call cc-disable-warning,maybe-uninitialized,)
 
-include $(srctree)/arch/$(SRCARCH)/Makefile
+# Tell gcc to never replace conditional load with a non-conditional one
+KBUILD_CFLAGS	+= $(call cc-option,--param=allow-store-data-races=0)
 
+include $(srctree)/arch/$(SRCARCH)/Makefile
 ifdef CONFIG_READABLE_ASM
 # Disable optimizations that make assembler listings hard to read.
 # reorder blocks reorders the control in the function
