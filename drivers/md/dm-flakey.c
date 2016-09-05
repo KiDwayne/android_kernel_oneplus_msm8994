@@ -345,7 +345,6 @@ static int flakey_end_io(struct dm_target *ti, struct bio *bio, int error)
 			return -EIO;
 		}
 	}
-
 	return error;
 }
 
