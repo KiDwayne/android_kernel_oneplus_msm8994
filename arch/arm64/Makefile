@@ -28,7 +28,6 @@ GEN_OPT_FLAGS := $(call cc-option,$(ARM_ARCH_OPT),-march=armv8-a) \
  -fmodulo-sched-allow-regmoves \
  -fivopts \
  -Wno-array-bounds
- 
 KBUILD_CFLAGS	+= -mgeneral-regs-only
 KBUILD_CFLAGS	+= -fno-pic
 KBUILD_CFLAGS	+= $(GEN_OPT_FLAGS)
