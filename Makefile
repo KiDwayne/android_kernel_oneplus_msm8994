@@ -193,8 +193,12 @@ SUBARCH := $(shell uname -m | sed -e s/i.86/x86/ -e s/x86_64/x86/ \
 # Default value for CROSS_COMPILE is not to prefix executables
 # Note: Some architectures assign CROSS_COMPILE in their arch/*/Makefile
 ARCH		?= arm64
-CROSS_COMPILE	?= $(CONFIG_CROSS_COMPILE:"%"=%)
-
+# Check for Suzumiya Build System
+ifeq ($(TOOLCHAIN_SUFFIX),)
+  CROSS_COMPILE	?= $(CONFIG_CROSS_COMPILE:"%"=%)
+else
+  CROSS_COMPILE	:= $(TOOLCHAIN_SUFFIX)
+endif
 # Architecture as present in compile.h
 UTS_MACHINE 	:= $(ARCH)
 SRCARCH 	:= $(ARCH)
@@ -239,8 +243,8 @@ CONFIG_SHELL := $(shell if [ -x "$$BASH" ]; then echo $$BASH; \
 	  else if [ -x /bin/bash ]; then echo /bin/bash; \
 	  else echo sh; fi ; fi)
 
-HOSTCC       = ccache gcc
-HOSTCXX      = ccache g++
+HOSTCC       = $(which ccache) gcc
+HOSTCXX      = $(which ccache) g++
 HOSTCFLAGS   = -Wall -Wmissing-prototypes -Wstrict-prototypes -O2 -fomit-frame-pointer -std=gnu89
 HOSTCXXFLAGS = -O2
 
