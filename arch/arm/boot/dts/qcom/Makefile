@@ -223,9 +223,12 @@ dtb-$(CONFIG_ARCH_APQ8084) += apq8084-v1.0-old-pwr-grid-liquid.dtb \
 	apq8084-v1.0-old-pwr-grid-mdm9x35-alt-cdp.dtb \
 	apq8084-v1.1-old-pwr-grid-mdm9x35-alt-cdp.dtb \
 	apq8084-v1.1-mdm9x35-alt-cdp.dtb \
-	apq8084-v1.1-sbc.dtb
-dtb-$(CONFIG_ARCH_MSM8994) += msm8994-v1-sim.dtb \
-	msm8994-rumi.dtb \
+  apq8084-v1.1-sbc.dtb
+dtb-$(CONFIG_ARCH_MSM8994) += msm8994-v1-mtp_14049_HW_14.dtb \
+	msm8994-v2.0-mtp_14049_HW_14.dtb \
+	msm8994-v2.1-mtp_14049_HW_14.dtb \
+  #msm8994-v1-sim.dtb \
+  msm8994-rumi.dtb \
 	msm8994-v1-cdp.dtb \
 	msm8994-pmi8994-pm8004-v1-cdp.dtb \
 	msm8994-v1-mtp.dtb \
