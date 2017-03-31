@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012-2016 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2012-2017 The Linux Foundation. All rights reserved.
  *
  * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
  *
@@ -71,12 +71,13 @@
 #include <linux/netdevice.h>
 #include <linux/mmc/sdio_func.h>
 #include "wlan_nlink_common.h"
+#include "wlan_btc_svc.h"
 #include "wlan_hdd_p2p.h"
 #ifdef IPA_OFFLOAD
 #include <wlan_hdd_ipa.h>
 #endif
 #include "cfgApi.h"
-#include "wni_cfg.h"
+#include "wniCfgAp.h"
 #include "wlan_hdd_misc.h"
 #include <vos_utils.h>
 #include "vos_cnss.h"
@@ -1286,78 +1287,6 @@ static VOS_STATUS hdd_wlan_set_dfs_nol(const void *pdfs_list, u16 sdfs_list)
 }
 #endif
 
-#ifdef FEATURE_WLAN_AP_AP_ACS_OPTIMIZE
-/**
- * hdd_handle_acs_scan_event() - handle acs scan event for SAP
- * @sap_event: tpSap_Event
- * @adapter: hdd_adapter_t for SAP
- *
- * The function is to handle the eSAP_ACS_SCAN_SUCCESS_EVENT event.
- * It will update scan result to cfg80211 and start a timer to flush the
- * cached acs scan result.
- *
- * Return: VOS_STATUS_SUCCESS on success,
-          other value on failure
- */
-static VOS_STATUS hdd_handle_acs_scan_event(tpSap_Event sap_event,
-		hdd_adapter_t *adapter)
-{
-	hdd_context_t *hdd_ctx;
-	struct tsap_acs_scan_complete_event *comp_evt;
-	VOS_STATUS vos_status;
-	int chan_list_size;
-
-	hdd_ctx = (hdd_context_t*)(adapter->pHddCtx);
-	if (!hdd_ctx) {
-		hddLog(VOS_TRACE_LEVEL_ERROR, FL("HDD context is null"));
-		return VOS_STATUS_E_FAILURE;
-	}
-	comp_evt = &sap_event->sapevt.sap_acs_scan_comp;
-	hdd_ctx->skip_acs_scan_status = eSAP_SKIP_ACS_SCAN;
-	spin_lock(&hdd_ctx->acs_skip_lock);
-	vos_mem_free(hdd_ctx->last_acs_channel_list);
-	hdd_ctx->last_acs_channel_list = NULL;
-	hdd_ctx->num_of_channels = 0;
-	/* cache the previous ACS scan channel list .
-	 * If the following OBSS scan chan list is covered by ACS chan list,
-	 * we can skip OBSS Scan to save SAP starting total time.
-	 */
-	if (comp_evt->num_of_channels && comp_evt->channellist) {
-		chan_list_size = comp_evt->num_of_channels *
-			sizeof(comp_evt->channellist[0]);
-		hdd_ctx->last_acs_channel_list = vos_mem_malloc(
-			chan_list_size);
-		if (hdd_ctx->last_acs_channel_list) {
-			vos_mem_copy(hdd_ctx->last_acs_channel_list,
-				comp_evt->channellist,
-				chan_list_size);
-			hdd_ctx->num_of_channels = comp_evt->num_of_channels;
-		}
-	}
-	spin_unlock(&hdd_ctx->acs_skip_lock);
-	/* Update ACS scan result to cfg80211. Then OBSS scan can reuse the
-	 * scan result.
-	 */
-	if (wlan_hdd_cfg80211_update_bss(hdd_ctx->wiphy, adapter))
-		hddLog(VOS_TRACE_LEVEL_INFO, FL("NO SCAN result"));
-
-	hddLog(LOG1, FL("Reusing Last ACS scan result for %d sec"),
-		ACS_SCAN_EXPIRY_TIMEOUT_S);
-	vos_timer_stop( &hdd_ctx->skip_acs_scan_timer);
-	vos_status = vos_timer_start( &hdd_ctx->skip_acs_scan_timer,
-			ACS_SCAN_EXPIRY_TIMEOUT_S * 1000);
-	if (!VOS_IS_STATUS_SUCCESS(vos_status))
-		hddLog(LOGE, FL("Failed to start ACS scan expiry timer"));
-	return VOS_STATUS_SUCCESS;
-}
-#else
-static VOS_STATUS hdd_handle_acs_scan_event(tpSap_Event sap_event,
-		hdd_adapter_t *adapter)
-{
-	return VOS_STATUS_SUCCESS;
-}
-#endif
-
 VOS_STATUS hdd_hostapd_SAPEventCB( tpSap_Event pSapEvent, v_PVOID_t usrDataForCallback)
 {
     hdd_adapter_t *pHostapdAdapter;
@@ -1522,6 +1451,11 @@ VOS_STATUS hdd_hostapd_SAPEventCB( tpSap_Event pSapEvent, v_PVOID_t usrDataForCa
 
             pHostapdState->bssState = BSS_START;
 
+            hdd_wlan_green_ap_start_bss(pHddCtx);
+
+            // Send current operating channel of SoftAP to BTC-ES
+            send_btc_nlink_msg(WLAN_BTC_SOFTAP_BSS_START, 0);
+
             /* Set default key index */
             VOS_TRACE( VOS_MODULE_ID_HDD, VOS_TRACE_LEVEL_INFO,
                     "%s: default key index %hu", __func__,
@@ -1631,6 +1565,8 @@ VOS_STATUS hdd_hostapd_SAPEventCB( tpSap_Event pSapEvent, v_PVOID_t usrDataForCa
 
             hdd_hostapd_channel_allow_suspend(pHostapdAdapter,
                     pHddApCtx->operatingChannel);
+
+            hdd_wlan_green_ap_stop_bss(pHddCtx);
 
             //Free up Channel List incase if it is set
 
@@ -1980,7 +1916,7 @@ VOS_STATUS hdd_hostapd_SAPEventCB( tpSap_Event pSapEvent, v_PVOID_t usrDataForCa
                 return VOS_STATUS_E_FAILURE;
             }
 #ifdef IPA_OFFLOAD
-            if (hdd_ipa_is_enabled(pHddCtx))
+            if (!pHddCtx->isLogpInProgress && hdd_ipa_is_enabled(pHddCtx))
             {
                 status = hdd_ipa_wlan_evt(pHostapdAdapter, staId, WLAN_CLIENT_DISCONNECT,
                 pSapEvent->sapevt.sapStationDisassocCompleteEvent.staMac.bytes);
@@ -2215,8 +2151,19 @@ VOS_STATUS hdd_hostapd_SAPEventCB( tpSap_Event pSapEvent, v_PVOID_t usrDataForCa
             else
                 return hdd_chan_change_notify(pHostapdAdapter, dev,
                            pSapEvent->sapevt.sapChSelected.pri_ch);
+#ifdef FEATURE_WLAN_AP_AP_ACS_OPTIMIZE
         case eSAP_ACS_SCAN_SUCCESS_EVENT:
-            return hdd_handle_acs_scan_event(pSapEvent, pHostapdAdapter);
+            pHddCtx->skip_acs_scan_status = eSAP_SKIP_ACS_SCAN;
+            hddLog(LOG1, FL("Reusing Last ACS scan result for %d sec"),
+                ACS_SCAN_EXPIRY_TIMEOUT_S);
+            vos_timer_stop( &pHddCtx->skip_acs_scan_timer);
+            vos_status = vos_timer_start( &pHddCtx->skip_acs_scan_timer,
+                                   ACS_SCAN_EXPIRY_TIMEOUT_S * 1000);
+            if (!VOS_IS_STATUS_SUCCESS(vos_status))
+                hddLog(LOGE, FL("Failed to start ACS scan expiry timer"));
+            return VOS_STATUS_SUCCESS;
+#endif
+
         case eSAP_DFS_NOL_GET:
             hddLog(VOS_TRACE_LEVEL_INFO,
                     FL("Received eSAP_DFS_NOL_GET event"));
@@ -2300,7 +2247,19 @@ stopbss :
 
         /* Stop the pkts from n/w stack as we are going to free all of
          * the TX WMM queues for all STAID's */
-        hdd_hostapd_stop(dev);
+
+       /*
+        * If channel avoidance is in progress means driver is performing SAP
+        * restart. So don't do carrier off, which may lead framework to do
+        * driver reload.
+        */
+        hddLog(LOG1, FL("ch avoid in progress: %d"),
+                        pHddCtx->is_ch_avoid_in_progress);
+        if (pHddCtx->is_ch_avoid_in_progress)
+            wlan_hdd_netif_queue_control(pHostapdAdapter, WLAN_NETIF_TX_DISABLE,
+                                         WLAN_CONTROL_PATH);
+        else
+            hdd_hostapd_stop(dev);
 
         /* reclaim all resources allocated to the BSS */
         vos_status = hdd_softap_stop_bss(pHostapdAdapter);
@@ -3711,11 +3670,8 @@ static __iw_softap_getparam(struct net_device *dev,
         }
 
     case QCSAP_PARAM_AUTO_CHANNEL:
-        {
-            *value = (WLAN_HDD_GET_CTX
+        *value = (WLAN_HDD_GET_CTX
                       (pHostapdAdapter))->cfg_ini->force_sap_acs;
-            break;
-        }
 
     case QCSAP_PARAM_RTSCTS:
         {
@@ -5585,6 +5541,13 @@ static int __iw_set_ap_genie(struct net_device *dev,
         return 0;
     }
 
+    if (wrqu->data.length > DOT11F_IE_RSN_MAX_LEN) {
+       VOS_TRACE(VOS_MODULE_ID_HDD, VOS_TRACE_LEVEL_ERROR,
+               "%s: WPARSN Ie input length is more than max[%d]", __func__,
+                wrqu->data.length);
+       return -EINVAL;
+    }
+
     switch (genie[0])
     {
         case DOT11F_EID_WPA:
@@ -6639,7 +6602,7 @@ void hdd_set_ap_ops( struct net_device *pWlanHostapdDev )
   pWlanHostapdDev->netdev_ops = &net_ops_struct;
 }
 
-VOS_STATUS hdd_init_ap_mode( hdd_adapter_t *pAdapter )
+VOS_STATUS hdd_init_ap_mode(hdd_adapter_t *pAdapter, bool reinit)
 {
     hdd_hostapd_state_t * phostapdBuf;
     struct net_device *dev = pAdapter->dev;
@@ -6665,20 +6628,27 @@ VOS_STATUS hdd_init_ap_mode( hdd_adapter_t *pAdapter )
             __func__, ret);
     }
 
+    VOS_TRACE(VOS_MODULE_ID_HDD, VOS_TRACE_LEVEL_INFO,
+               FL("SSR in progress: %d"), reinit);
 #ifdef WLAN_FEATURE_MBSSID
-    sapContext = WLANSAP_Open(pVosContext);
-    if (sapContext == NULL)
-    {
-          VOS_TRACE(VOS_MODULE_ID_HDD, VOS_TRACE_LEVEL_ERROR, ("ERROR: WLANSAP_Open failed!!"));
-          return VOS_STATUS_E_FAULT;
+    if (reinit) {
+        sapContext = pAdapter->sessionCtx.ap.sapContext;
+    } else {
+        sapContext = WLANSAP_Open(pVosContext);
+        if (sapContext == NULL)
+        {
+            VOS_TRACE(VOS_MODULE_ID_HDD, VOS_TRACE_LEVEL_ERROR,
+                       FL("ERROR: WLANSAP_Open failed!!"));
+            return VOS_STATUS_E_FAULT;
+        }
+
+        pAdapter->sessionCtx.ap.sapContext = sapContext;
+        pAdapter->sessionCtx.ap.sapConfig.channel =
+                                   pHddCtx->acs_policy.acs_channel;
+        mode = pHddCtx->acs_policy.acs_dfs_mode;
+        pAdapter->sessionCtx.ap.sapConfig.acs_dfs_mode =
+                                        wlan_hdd_get_dfs_mode(mode);
     }
-
-    pAdapter->sessionCtx.ap.sapContext = sapContext;
-    pAdapter->sessionCtx.ap.sapConfig.channel = pHddCtx->acs_policy.acs_channel;
-    mode = pHddCtx->acs_policy.acs_dfs_mode;
-    pAdapter->sessionCtx.ap.sapConfig.acs_dfs_mode =
-          wlan_hdd_get_dfs_mode(mode);
-
 
     if (pAdapter->device_mode == WLAN_HDD_P2P_GO) {
         device_mode = VOS_P2P_GO_MODE;
@@ -6781,10 +6751,12 @@ VOS_STATUS hdd_init_ap_mode( hdd_adapter_t *pAdapter )
                     __func__, ret);
     }
 
-    pAdapter->sessionCtx.ap.sapConfig.acs_cfg.acs_mode = false;
-    vos_mem_free(pAdapter->sessionCtx.ap.sapConfig.acs_cfg.ch_list);
-    vos_mem_zero(&pAdapter->sessionCtx.ap.sapConfig.acs_cfg,
-                                                   sizeof(struct sap_acs_cfg));
+    if (!reinit) {
+        pAdapter->sessionCtx.ap.sapConfig.acs_cfg.acs_mode = false;
+        vos_mem_free(pAdapter->sessionCtx.ap.sapConfig.acs_cfg.ch_list);
+        vos_mem_zero(&pAdapter->sessionCtx.ap.sapConfig.acs_cfg,
+                                           sizeof(struct sap_acs_cfg));
+    }
     return status;
 
 error_wmm_init:
@@ -6860,12 +6832,6 @@ hdd_adapter_t* hdd_wlan_create_ap_dev(hdd_context_t *pHddCtx,
          */
         hdd_set_needed_headroom(pWlanHostapdDev,
                            pWlanHostapdDev->hard_header_len);
-
-        if (pHddCtx->cfg_ini->enableIPChecksumOffload)
-            pWlanHostapdDev->features |= NETIF_F_HW_CSUM;
-        else if (pHddCtx->cfg_ini->enableTCPChkSumOffld)
-            pWlanHostapdDev->features |= NETIF_F_IP_CSUM | NETIF_F_IPV6_CSUM;
-        pWlanHostapdDev->features |= NETIF_F_RXCSUM;
 
         SET_NETDEV_DEV(pWlanHostapdDev, pHddCtx->parent_dev);
         spin_lock_init(&pHostapdAdapter->pause_map_lock);
@@ -6954,4 +6920,81 @@ VOS_STATUS hdd_unregister_hostapd(hdd_adapter_t *pAdapter, bool rtnl_held)
 
    EXIT();
    return 0;
+}
+
+/**
+ * hdd_sap_indicate_disconnect_for_sta() - Indicate disconnect indication
+ * to supplicant, if there any clients connected to SAP interface.
+ * @adapter: sap adapter context
+ *
+ * Return:   nothing
+ */
+void hdd_sap_indicate_disconnect_for_sta(hdd_adapter_t *adapter)
+{
+	tSap_Event sap_event;
+	int staId;
+	ptSapContext sap_ctx = WLAN_HDD_GET_SAP_CTX_PTR(adapter);
+
+	ENTER();
+
+	if (!sap_ctx) {
+		hddLog(LOGE, FL("invalid sap context"));
+		return;
+	}
+
+	for (staId = 0; staId < WLAN_MAX_STA_COUNT; staId++) {
+		if (adapter->aStaInfo[staId].isUsed) {
+			hddLog(LOG1, FL("staId: %d isUsed: %d %p"),
+				staId, adapter->aStaInfo[staId].isUsed,
+				sap_ctx);
+
+			if (vos_is_macaddr_broadcast(
+				&adapter->aStaInfo[staId].macAddrSTA))
+				continue;
+
+			sap_event.sapHddEventCode = eSAP_STA_DISASSOC_EVENT;
+			vos_mem_copy(
+				&sap_event.sapevt.
+					sapStationDisassocCompleteEvent.staMac,
+				&adapter->aStaInfo[staId].macAddrSTA,
+				sizeof(v_MACADDR_t));
+			sap_event.sapevt.sapStationDisassocCompleteEvent.
+			reason =
+				eSAP_MAC_INITATED_DISASSOC;
+			sap_event.sapevt.sapStationDisassocCompleteEvent.
+			statusCode =
+				eSIR_SME_RESOURCES_UNAVAILABLE;
+			hdd_hostapd_SAPEventCB(&sap_event,
+				sap_ctx->pUsrContext);
+		}
+	}
+
+	clear_bit(SOFTAP_BSS_STARTED, &adapter->event_flags);
+
+	EXIT();
+}
+
+/**
+ * hdd_sap_destroy_events() - Destroy sap evets
+ * @adapter: sap adapter context
+ *
+ * Return:   nothing
+ */
+void hdd_sap_destroy_events(hdd_adapter_t *adapter)
+{
+	ptSapContext sap_ctx = WLAN_HDD_GET_SAP_CTX_PTR(adapter);
+
+	if (!sap_ctx) {
+	hddLog(LOGE, FL("invalid sap context"));
+	return;
+	}
+
+	if (!VOS_IS_STATUS_SUCCESS(vos_lock_destroy(&sap_ctx->SapGlobalLock)))
+		VOS_TRACE(VOS_MODULE_ID_SAP, VOS_TRACE_LEVEL_ERROR,
+		FL("WLANSAP_Stop failed destroy lock"));
+
+	if (!VOS_IS_STATUS_SUCCESS(vos_event_destroy(
+		&sap_ctx->sap_session_opened_evt)))
+		VOS_TRACE(VOS_MODULE_ID_SAP, VOS_TRACE_LEVEL_ERROR,
+		FL("failed to destroy session open event"));
 }

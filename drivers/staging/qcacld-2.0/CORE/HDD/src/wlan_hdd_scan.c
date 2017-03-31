@@ -720,9 +720,8 @@ static int __iw_set_scan(struct net_device *dev, struct iw_request_info *info,
    }
 
    /* push addIEScan in scanRequset if exist */
-   if (pAdapter->scan_info.scanAddIE.length &&
-       (pAdapter->scan_info.scanAddIE.length <=
-        sizeof(pAdapter->scan_info.scanAddIE.addIEdata)))
+   if (pAdapter->scan_info.scanAddIE.addIEdata &&
+       pAdapter->scan_info.scanAddIE.length)
    {
        scanRequest.uIEFieldLen = pAdapter->scan_info.scanAddIE.length;
        scanRequest.pIEField = pAdapter->scan_info.scanAddIE.addIEdata;
@@ -1133,9 +1132,8 @@ int iw_set_cscan(struct net_device *dev, struct iw_request_info *info,
         }
 
         /* push addIEScan in scanRequset if exist */
-        if (pAdapter->scan_info.scanAddIE.length &&
-            (pAdapter->scan_info.scanAddIE.length <=
-             sizeof(pAdapter->scan_info.scanAddIE.addIEdata)))
+        if (pAdapter->scan_info.scanAddIE.addIEdata &&
+            pAdapter->scan_info.scanAddIE.length)
         {
             scanRequest.uIEFieldLen = pAdapter->scan_info.scanAddIE.length;
             scanRequest.pIEField = pAdapter->scan_info.scanAddIE.addIEdata;

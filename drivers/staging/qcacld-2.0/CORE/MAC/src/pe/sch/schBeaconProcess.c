@@ -38,7 +38,8 @@
  */
 
 #include "palTypes.h"
-#include "wni_cfg.h"
+#include "wniCfgSta.h"
+
 #include "cfgApi.h"
 #include "pmmApi.h"
 #include "limApi.h"

@@ -38,7 +38,7 @@
  */
 #include "palTypes.h"
 #include "aniGlobal.h"
-#include "wni_cfg.h"
+#include "wniCfgSta.h"
 #include "sirApi.h"
 #include "cfgApi.h"
 
@@ -54,6 +54,10 @@
 #include "limAdmitControl.h"
 #include "palApi.h"
 #include "limSessionUtils.h"
+#ifdef WLAN_FEATURE_11W
+#include "wniCfgAp.h"
+#endif
+
 
 #include "vos_types.h"
 #include "vos_utils.h"
@@ -552,7 +556,7 @@ limProcessAssocReqFrame(tpAniSirGlobal pMac, tANI_U8 *pRxPacketInfo,
 
     if (LIM_IS_AP_ROLE(psessionEntry) &&
        (psessionEntry->dot11mode == WNI_CFG_DOT11_MODE_11AC_ONLY) &&
-       ((vht_caps == NULL) || ((vht_caps != NULL) && (!vht_caps->present)))) {
+       (vht_caps != NULL) && (!vht_caps->present)) {
         limSendAssocRspMgmtFrame( pMac, eSIR_MAC_CAPABILITIES_NOT_SUPPORTED_STATUS,
                                   1, pHdr->sa, subType, 0, psessionEntry );
         limLog(pMac, LOGE, FL("SOFTAP was in 11AC only mode, reject"));
@@ -1441,9 +1445,9 @@ if (limPopulateMatchingRateSet(pMac,
                              (tSirResultCodes) eSIR_MAC_UNSPEC_FAILURE_STATUS, psessionEntry);
         goto error;
     }
-    if (WNI_CFG_PMF_SA_QUERY_RETRY_INTERVAL_STAMIN > retryInterval)
+    if (WNI_CFG_PMF_SA_QUERY_RETRY_INTERVAL_APMIN > retryInterval)
     {
-        retryInterval = WNI_CFG_PMF_SA_QUERY_RETRY_INTERVAL_STADEF;
+        retryInterval = WNI_CFG_PMF_SA_QUERY_RETRY_INTERVAL_APDEF;
     }
     if (tx_timer_create(&pStaDs->pmfSaQueryTimer, "PMF SA Query timer",
                         limPmfSaQueryTimerHandler, timerId.value,

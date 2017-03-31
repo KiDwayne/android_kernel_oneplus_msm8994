@@ -756,17 +756,16 @@ static int __ol_transfer_bin_file(struct ol_softc *scn, ATH_BIN_FILE file,
 		}
 
 		switch (scn->target_type) {
-		case TARGET_TYPE_AR6004:
-			board_data_size =  AR6004_BOARD_DATA_SZ;
-			board_ext_data_size = AR6004_BOARD_EXT_DATA_SZ;
-			break;
-		case TARGET_TYPE_AR9888:
-			board_data_size =  AR9888_BOARD_DATA_SZ;
-			board_ext_data_size = AR9888_BOARD_EXT_DATA_SZ;
-			break;
 		default:
 			board_data_size = 0;
 			board_ext_data_size = 0;
+			break;
+		case TARGET_TYPE_AR6004:
+			board_data_size =  AR6004_BOARD_DATA_SZ;
+			board_ext_data_size = AR6004_BOARD_EXT_DATA_SZ;
+		case TARGET_TYPE_AR9888:
+			board_data_size =  AR9888_BOARD_DATA_SZ;
+			board_ext_data_size = AR9888_BOARD_EXT_DATA_SZ;
 			break;
 		}
 

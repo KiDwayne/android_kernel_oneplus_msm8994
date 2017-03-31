@@ -39,7 +39,7 @@
 
 #include "palTypes.h"
 #include "wniApi.h"
-#include "wni_cfg.h"
+#include "wniCfgSta.h"
 #include "cfgApi.h"
 #include "sirApi.h"
 #include "schApi.h"
@@ -82,6 +82,10 @@
 #define DEFAULT_PASSIVE_MAX_CHANNEL_TIME    110     // in msecs
 
 #define CONV_MS_TO_US 1024 //conversion factor from ms to us
+
+#define BEACON_INTERVAL_THRESHOLD 50  /* in msecs */
+#define STA_BURST_SCAN_DURATION 120   /* in msecs */
+
 // SME REQ processing function templates
 static void __limProcessSmeStartReq(tpAniSirGlobal, tANI_U32 *);
 static tANI_BOOLEAN __limProcessSmeSysReadyInd(tpAniSirGlobal, tANI_U32 *);
@@ -1199,14 +1203,9 @@ static eHalStatus limSendHalStartScanOffloadReq(tpAniSirGlobal pMac,
     tANI_U8 *vht_cap_ie;
     tANI_U16 vht_cap_len = 0;
 #endif /* WLAN_FEATURE_11AC */
-    uint8_t *vendor_tpc_ie;
     tSirRetStatus status, rc = eSIR_SUCCESS;
     tDot11fIEExtCap extracted_extcap = {0};
     bool extcap_present = true;
-    uint32_t lim_11h_enable = WNI_CFG_11H_ENABLED_STADEF;
-
-    wlan_cfgGetInt(pMac, WNI_CFG_11H_ENABLED, &lim_11h_enable);
-
 
     pMac->lim.fOffloadScanPending = 0;
     pMac->lim.fOffloadScanP2PSearch = 0;
@@ -1259,11 +1258,6 @@ static eHalStatus limSendHalStartScanOffloadReq(tpAniSirGlobal pMac,
 #endif /* WLAN_FEATURE_11AC */
     }
 
-    if (lim_11h_enable) {
-            addn_ie_len += DOT11F_IE_WFATPC_MAX_LEN + 2;
-            len += DOT11F_IE_WFATPC_MAX_LEN + 2;
-    }
-
     pScanOffloadReq = vos_mem_malloc(len);
     if ( NULL == pScanOffloadReq )
     {
@@ -1312,7 +1306,16 @@ static eHalStatus limSendHalStartScanOffloadReq(tpAniSirGlobal pMac,
     pScanOffloadReq->min_rest_time= pScanReq->min_rest_time;
     pScanOffloadReq->idle_time= pScanReq->idle_time;
 
-
+    for (i = 0; i < pMac->lim.maxBssId; i++) {
+        tpPESession session_entry = peFindSessionBySessionId(pMac,i);
+        if (session_entry &&
+            (eLIM_MLM_LINK_ESTABLISHED_STATE == session_entry->limMlmState) &&
+            (session_entry->beaconParams.beaconInterval
+                                      < BEACON_INTERVAL_THRESHOLD)) {
+            pScanOffloadReq->burst_scan_duration = STA_BURST_SCAN_DURATION;
+            break;
+        }
+    }
     /* for normal scan, the value for p2pScanType should be 0
        always */
     if (pScanReq->p2pSearch)
@@ -1366,24 +1369,6 @@ static eHalStatus limSendHalStartScanOffloadReq(tpAniSirGlobal pMac,
             pScanOffloadReq->uIEFieldLen += vht_cap_len;
         }
 #endif /* WLAN_FEATURE_11AC */
-    }
-
-    if (lim_11h_enable) {
-            tDot11fIEWFATPC wfa_tpc;
-            vendor_tpc_ie = (uint8_t *) pScanOffloadReq +
-                                 pScanOffloadReq->uIEFieldOffset +
-                                 pScanOffloadReq->uIEFieldLen;
-            PopulateDot11fWFATPC(pMac, &wfa_tpc,
-                                 rrmGetMgmtTxPower(pMac, NULL), 0);
-            vendor_tpc_ie[0] = DOT11F_EID_WFATPC;
-            vendor_tpc_ie[1] = DOT11F_IE_WFATPC_MAX_LEN;
-            vos_mem_copy(&vendor_tpc_ie[2], SIR_MAC_WFA_TPC_OUI,
-                                 SIR_MAC_WFA_TPC_OUI_SIZE);
-            vos_mem_copy(&vendor_tpc_ie[SIR_MAC_WFA_TPC_OUI_SIZE + 2],
-                                 ((uint8_t *)&wfa_tpc) + 1,
-                                  DOT11F_IE_WFATPC_MAX_LEN
-                                  - SIR_MAC_WFA_TPC_OUI_SIZE);
-            pScanOffloadReq->uIEFieldLen += DOT11F_IE_WFATPC_MAX_LEN + 2;
     }
 
     rc = wdaPostCtrlMsg(pMac, &msg);
@@ -2034,9 +2019,7 @@ __limProcessSmeJoinReq(tpAniSirGlobal pMac, tANI_U32 *pMsgBuf)
 
 
         /* Store vendor specfic IE for CISCO AP */
-        ieLen = (pSmeJoinReq->bssDescription.length +
-                  sizeof( pSmeJoinReq->bssDescription.length ) -
-                  GET_FIELD_OFFSET( tSirBssDescription, ieFields ));
+        ieLen = GET_IE_LEN_IN_BSS(pSmeJoinReq->bssDescription.length);
 
         vendorIE = cfg_get_vendor_ie_ptr_from_oui(pMac, SIR_MAC_CISCO_OUI,
                     SIR_MAC_CISCO_OUI_SIZE,
@@ -2105,14 +2088,17 @@ __limProcessSmeJoinReq(tpAniSirGlobal pMac, tANI_U32 *pMsgBuf)
             psessionEntry->txMuBformee = pSmeJoinReq->txMuBformee;
             psessionEntry->enableVhtpAid = pSmeJoinReq->enableVhtpAid;
             psessionEntry->enableVhtGid = pSmeJoinReq->enableVhtGid;
-            if (cfgSetInt(pMac, WNI_CFG_VHT_SU_BEAMFORMEE_CAP,
-                    psessionEntry->txBFIniFeatureEnabled)) {
-                    limLog(pMac, LOGE, FL("Could not set WNI_CFG_VHT_SU_BEAMFORMEE_CAP at CFG"));
+            if( psessionEntry->txBFIniFeatureEnabled )
+            {
+                if (cfgSetInt(pMac, WNI_CFG_VHT_SU_BEAMFORMEE_CAP,
+                                     psessionEntry->txBFIniFeatureEnabled)
+                                                             != eSIR_SUCCESS)
+                {
+                    limLog(pMac, LOGE, FL("could not set  "
+                                  "WNI_CFG_VHT_SU_BEAMFORMEE_CAP at CFG"));
                     retCode = eSIR_LOGP_EXCEPTION;
                     goto end;
-            }
-
-            if (psessionEntry->txBFIniFeatureEnabled) {
+                }
                 if (cfgSetInt(pMac, WNI_CFG_VHT_CSN_BEAMFORMEE_ANT_SUPPORTED,
                                                        pSmeJoinReq->txBFCsnValue)
                                                              != eSIR_SUCCESS)
@@ -2275,8 +2261,8 @@ __limProcessSmeJoinReq(tpAniSirGlobal pMac, tANI_U32 *pMsgBuf)
         {
            limExtractApCapability( pMac,
               (tANI_U8 *) psessionEntry->pLimJoinReq->bssDescription.ieFields,
-              limGetIElenFromBssDescription(
-              &psessionEntry->pLimJoinReq->bssDescription),
+              GET_IE_LEN_IN_BSS(
+              psessionEntry->pLimJoinReq->bssDescription.length),
               &psessionEntry->limCurrentBssQosCaps,
               &psessionEntry->limCurrentBssPropCap,
               &pMac->lim.gLimCurrentBssUapsd
@@ -2288,8 +2274,8 @@ __limProcessSmeJoinReq(tpAniSirGlobal pMac, tANI_U32 *pMsgBuf)
         {
            limExtractApCapability( pMac,
               (tANI_U8 *) psessionEntry->pLimJoinReq->bssDescription.ieFields,
-              limGetIElenFromBssDescription(
-              &psessionEntry->pLimJoinReq->bssDescription),
+              GET_IE_LEN_IN_BSS(
+              psessionEntry->pLimJoinReq->bssDescription.length),
               &psessionEntry->limCurrentBssQosCaps,
               &psessionEntry->limCurrentBssPropCap,
               &psessionEntry->gLimCurrentBssUapsd,
@@ -2638,8 +2624,8 @@ __limProcessSmeReassocReq(tpAniSirGlobal pMac, tANI_U32 *pMsgBuf)
     {
         limExtractApCapability( pMac,
             (tANI_U8 *) psessionEntry->pLimReAssocReq->bssDescription.ieFields,
-            limGetIElenFromBssDescription(
-                     &psessionEntry->pLimReAssocReq->bssDescription),
+            GET_IE_LEN_IN_BSS(
+            psessionEntry->pLimReAssocReq->bssDescription.length),
             &psessionEntry->limReassocBssQosCaps,
             &psessionEntry->limReassocBssPropCap,
             &pMac->lim.gLimCurrentBssUapsd
@@ -2651,8 +2637,8 @@ __limProcessSmeReassocReq(tpAniSirGlobal pMac, tANI_U32 *pMsgBuf)
     {
         limExtractApCapability(pMac,
             (tANI_U8 *) psessionEntry->pLimReAssocReq->bssDescription.ieFields,
-            limGetIElenFromBssDescription(
-                     &psessionEntry->pLimReAssocReq->bssDescription),
+            GET_IE_LEN_IN_BSS(
+            psessionEntry->pLimReAssocReq->bssDescription.length),
             &psessionEntry->limReassocBssQosCaps,
             &psessionEntry->limReassocBssPropCap,
             &psessionEntry->gLimCurrentBssUapsd,

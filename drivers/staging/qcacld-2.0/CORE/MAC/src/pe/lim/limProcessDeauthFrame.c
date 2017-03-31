@@ -246,11 +246,10 @@ limProcessDeauthFrame(tpAniSirGlobal pMac, tANI_U8 *pRxPacketInfo, tpPESession p
      *     AP we're currently associated with (case a), then proceed
      *     with normal deauth processing.
      */
-
-    pRoamSessionEntry =
-        peFindSessionByBssid(pMac, psessionEntry->limReAssocbssId,
-                                                    &roamSessionId);
-
+    if ( psessionEntry->limReAssocbssId!=NULL )
+    {
+        pRoamSessionEntry = peFindSessionByBssid(pMac, psessionEntry->limReAssocbssId, &roamSessionId);
+    }
     if (limIsReassocInProgress(pMac,psessionEntry) || limIsReassocInProgress(pMac,pRoamSessionEntry)) {
         if (!IS_REASSOC_BSSID(pMac,pHdr->sa,psessionEntry)) {
             PELOGE(limLog(pMac, LOGE, FL("Rcv Deauth from unknown/different "

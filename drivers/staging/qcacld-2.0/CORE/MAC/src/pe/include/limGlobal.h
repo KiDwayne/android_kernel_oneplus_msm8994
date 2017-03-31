@@ -45,7 +45,7 @@
 #include "sirMacPropExts.h"
 #include "sirCommon.h"
 #include "sirDebug.h"
-#include "wni_cfg.h"
+#include "wniCfgSta.h"
 #include "csrApi.h"
 #include "sapApi.h"
 #include "dot11f.h"

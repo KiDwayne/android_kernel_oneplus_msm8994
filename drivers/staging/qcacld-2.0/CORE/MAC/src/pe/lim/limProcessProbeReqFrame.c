@@ -36,7 +36,7 @@
  *
  */
 
-#include "wni_cfg.h"
+#include "wniCfgSta.h"
 #include "aniGlobal.h"
 #include "cfgApi.h"
 

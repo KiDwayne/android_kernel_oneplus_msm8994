@@ -91,6 +91,7 @@
 #include "vos_api.h"
 #include "sirDebug.h"
 
+#define ATH_SUPPORT_DFS   1
 #define CHANNEL_TURBO     0x00010
 #define DFS_PRINTK(_fmt, ...) printk((_fmt), __VA_ARGS__)
 #define DFS_DPRINTK(dfs, _m, _fmt, ...) do {             \
