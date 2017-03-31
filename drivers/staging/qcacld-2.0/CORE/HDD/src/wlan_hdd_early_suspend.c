@@ -52,7 +52,6 @@
 #include <vos_sched.h>
 #include <macInitApi.h>
 #include <wlan_qct_sys.h>
-#include <wlan_btc_svc.h>
 #include <wlan_nlink_common.h>
 #include <wlan_hdd_main.h>
 #include <wlan_hdd_assoc.h>
@@ -100,6 +99,8 @@
 #endif
 
 #include "ol_fw.h"
+#include "wlan_hdd_host_offload.h"
+
 /* Time in msec.
  * Time includes 60sec timeout of request_firmware for various binaries
  * (OTP, BDWLAN, QWLAN) and other cleanup and re-init sequence
@@ -599,6 +600,13 @@ static int __wlan_hdd_ipv6_changed(struct notifier_block *nb,
 	if (adapter->device_mode == WLAN_HDD_INFRA_STATION ||
 	    adapter->device_mode == WLAN_HDD_P2P_CLIENT ||
 	    adapter->device_mode == WLAN_HDD_NDI) {
+
+		if (eConnectionState_Associated ==
+			WLAN_HDD_GET_STATION_CTX_PTR
+			(adapter)->conn_info.connState)
+				sme_dhcp_done_ind(hdd_ctx->hHal,
+				adapter->sessionId);
+
 		if (hdd_ctx->cfg_ini->nEnableSuspend ==
 			WLAN_MAP_SUSPEND_TO_MCAST_BCAST_FILTER &&
 			hdd_ctx->ns_offload_enable)
@@ -1180,6 +1188,12 @@ static int __wlan_hdd_ipv4_changed(struct notifier_block *nb,
 	      adapter->device_mode == WLAN_HDD_P2P_CLIENT ||
 	      adapter->device_mode == WLAN_HDD_NDI))
 		return NOTIFY_DONE;
+
+	if (eConnectionState_Associated ==
+		WLAN_HDD_GET_STATION_CTX_PTR(
+		adapter)->conn_info.connState)
+			sme_dhcp_done_ind(hdd_ctx->hHal,
+			adapter->sessionId);
 
 	if ((hdd_ctx->cfg_ini->nEnableSuspend !=
 				WLAN_MAP_SUSPEND_TO_MCAST_BCAST_FILTER) ||
@@ -2011,6 +2025,11 @@ VOS_STATUS hdd_wlan_shutdown(void)
    hddLog(VOS_TRACE_LEVEL_INFO,
            FL("Invoking packetdump deregistration API"));
    wlan_deregister_txrx_packetdump();
+
+   if (VOS_TIMER_STATE_RUNNING ==
+            vos_timer_getCurrentState(&pHddCtx->tdls_source_timer))
+      vos_timer_stop(&pHddCtx->tdls_source_timer);
+
 #ifdef FEATURE_BUS_BANDWIDTH
    if (VOS_TIMER_STATE_RUNNING ==
            vos_timer_getCurrentState(&pHddCtx->bus_bw_timer))
@@ -2162,34 +2181,7 @@ VOS_STATUS hdd_wlan_shutdown(void)
    return VOS_STATUS_SUCCESS;
 }
 
-/**
- * hdd_ssr_restart_sap() - restart sap on SSR
- * @hdd_ctx:   hdd context
- *
- * Return:     nothing
- */
-static void hdd_ssr_restart_sap(hdd_context_t *hdd_ctx)
-{
-	VOS_STATUS       status;
-	hdd_adapter_list_node_t *adapter_node = NULL, *next = NULL;
-	hdd_adapter_t *adapter;
 
-	ENTER();
-
-	status =  hdd_get_front_adapter (hdd_ctx, &adapter_node);
-	while (NULL != adapter_node && VOS_STATUS_SUCCESS == status) {
-		adapter = adapter_node->pAdapter;
-		if (adapter && adapter->device_mode == WLAN_HDD_SOFTAP) {
-			hddLog(VOS_TRACE_LEVEL_INFO, FL("in sap mode %p"),
-				adapter);
-			wlan_hdd_start_sap(adapter, true);
-		}
-		status = hdd_get_next_adapter ( hdd_ctx, adapter_node, &next );
-		adapter_node = next;
-	}
-
-	EXIT();
-}
 
 /* the HDD interface to WLAN driver re-init.
  * This is called to initialize/start WLAN driver after a shutdown.
@@ -2201,6 +2193,7 @@ VOS_STATUS hdd_wlan_re_init(void *hif_sc)
    hdd_context_t    *pHddCtx = NULL;
    eHalStatus       halStatus;
    bool             bug_on_reinit_failure = 0;
+
    hdd_adapter_t *pAdapter;
    int i;
    hdd_prevent_suspend(WIFI_POWER_EVENT_WAKELOCK_DRIVER_REINIT);
@@ -2233,8 +2226,7 @@ VOS_STATUS hdd_wlan_re_init(void *hif_sc)
    ((VosContextType*)pVosContext)->pHIFContext = hif_sc;
 
    /* The driver should always be initialized in STA mode after SSR */
-   if (VOS_STA_SAP_MODE != hdd_get_conparam())
-       hdd_set_conparam(0);
+   hdd_set_conparam(0);
 
    /* Re-open VOSS, it is a re-open b'se control transport was never closed. */
    vosStatus = vos_open(&pVosContext, 0);
@@ -2301,15 +2293,6 @@ VOS_STATUS hdd_wlan_re_init(void *hif_sc)
       goto err_vosclose;
    }
 
-   /*
-    * Invoke ipa reinit before vos_start so that doorbell registers are
-    * updated
-    */
-#ifdef IPA_UC_OFFLOAD
-   if (hdd_ipa_uc_ssr_reinit(pHddCtx))
-      hddLog(LOGE, "%s: HDD IPA UC reinit failed", __func__);
-#endif
-
    /* Start VOSS which starts up the SME/MAC/HAL modules and everything else
       Note: Firmware image will be read and downloaded inside vos_start API */
    vosStatus = vos_start( pVosContext );
@@ -2318,6 +2301,11 @@ VOS_STATUS hdd_wlan_re_init(void *hif_sc)
       hddLog(VOS_TRACE_LEVEL_FATAL,"%s: vos_start failed",__func__);
       goto err_vosclose;
    }
+#ifdef IPA_UC_OFFLOAD
+   if (hdd_ipa_uc_ssr_reinit())
+      hddLog(LOGE, "%s: HDD IPA UC reinit failed", __func__);
+#endif
+
 
    vosStatus = hdd_post_voss_start_config( pHddCtx );
    if ( !VOS_IS_STATUS_SUCCESS( vosStatus ) )
@@ -2346,6 +2334,9 @@ VOS_STATUS hdd_wlan_re_init(void *hif_sc)
 
    /* Pass FW version to HIF layer */
    hif_set_fw_info(hif_sc, pHddCtx->target_fw_version);
+
+   wlan_hdd_send_svc_nlink_msg(pHddCtx->radio_index,
+                               WLAN_SVC_FW_CRASHED_IND, NULL, 0);
 
    /* Restart all adapters */
    hdd_start_all_adapters(pHddCtx);
@@ -2393,9 +2384,6 @@ VOS_STATUS hdd_wlan_re_init(void *hif_sc)
    pHddCtx->btCoexModeSet = false;
    hdd_register_mcast_bcast_filter(pHddCtx);
 
-   wlan_hdd_send_svc_nlink_msg(pHddCtx->radio_index,
-                               WLAN_SVC_FW_CRASHED_IND, NULL, 0);
-
    /* Allow the phone to go to sleep */
    hdd_allow_suspend(WIFI_POWER_EVENT_WAKELOCK_DRIVER_REINIT);
    /* register for riva power on lock */
@@ -2440,6 +2428,7 @@ err_vosclose:
    vos_sched_close(pVosContext);
 
 #ifdef MEMORY_DEBUG
+   adf_net_buf_debug_exit();
    vos_mem_exit();
 #endif
 
@@ -2454,7 +2443,6 @@ err_re_init:
          /* Unregister all Net Device Notifiers */
          wlan_hdd_netdev_notifiers_cleanup(pHddCtx);
          /* Clean up HDD Nlink Service */
-         send_btc_nlink_msg(WLAN_MODULE_DOWN_IND, 0);
          nl_srv_exit();
          hdd_runtime_suspend_deinit(pHddCtx);
          hdd_close_all_adapters(pHddCtx);
@@ -2477,10 +2465,6 @@ err_re_init:
    hdd_wlan_wakelock_destroy();
    return -EPERM;
 success:
-   /* Trigger replay of BTC events */
-   send_btc_nlink_msg(WLAN_MODULE_DOWN_IND, 0);
-   if (pHddCtx->cfg_ini->sap_internal_restart)
-       hdd_ssr_restart_sap(pHddCtx);
    pHddCtx->isLogpInProgress = FALSE;
    hdd_ssr_timer_del();
    return VOS_STATUS_SUCCESS;
