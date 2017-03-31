@@ -40,8 +40,7 @@
 #include "wniApi.h"
 #include "sirCommon.h"
 #include "aniGlobal.h"
-
-#include "wniCfgSta.h"
+#include "wni_cfg.h"
 #include "sysDef.h"
 #include "cfgApi.h"
 
@@ -555,28 +554,26 @@ limSendSmeJoinReassocRsp(tpAniSirGlobal pMac, tANI_U16 msgType,
             }
 
 #ifdef FEATURE_WLAN_MCC_TO_SCC_SWITCH
-            if (psessionEntry->cc_switch_mode != VOS_MCC_TO_SCC_SWITCH_DISABLE) {
-                pSirSmeJoinRsp->HTProfile.htSupportedChannelWidthSet =
-                                      psessionEntry->htSupportedChannelWidthSet;
-                pSirSmeJoinRsp->HTProfile.htRecommendedTxWidthSet =
-                                      psessionEntry->htRecommendedTxWidthSet;
-                pSirSmeJoinRsp->HTProfile.htSecondaryChannelOffset =
-                                      psessionEntry->htSecondaryChannelOffset;
-                pSirSmeJoinRsp->HTProfile.dot11mode =
-                                      psessionEntry->dot11mode;
-                pSirSmeJoinRsp->HTProfile.htCapability =
-                                      psessionEntry->htCapability;
+            pSirSmeJoinRsp->HTProfile.htSupportedChannelWidthSet =
+                                  psessionEntry->htSupportedChannelWidthSet;
+            pSirSmeJoinRsp->HTProfile.htRecommendedTxWidthSet =
+                                  psessionEntry->htRecommendedTxWidthSet;
+            pSirSmeJoinRsp->HTProfile.htSecondaryChannelOffset =
+                                  psessionEntry->htSecondaryChannelOffset;
+            pSirSmeJoinRsp->HTProfile.dot11mode =
+                                  psessionEntry->dot11mode;
+            pSirSmeJoinRsp->HTProfile.htCapability =
+                                  psessionEntry->htCapability;
 #ifdef WLAN_FEATURE_11AC
-                pSirSmeJoinRsp->HTProfile.vhtCapability =
-                                      psessionEntry->vhtCapability;
-                pSirSmeJoinRsp->HTProfile.vhtTxChannelWidthSet =
-                                      psessionEntry->vhtTxChannelWidthSet;
-                pSirSmeJoinRsp->HTProfile.apCenterChan =
-                                      psessionEntry->apCenterChan;
-                pSirSmeJoinRsp->HTProfile.apChanWidth =
-                                      psessionEntry->apChanWidth;
+            pSirSmeJoinRsp->HTProfile.vhtCapability =
+                                  psessionEntry->vhtCapability;
+            pSirSmeJoinRsp->HTProfile.vhtTxChannelWidthSet =
+                                  psessionEntry->vhtTxChannelWidthSet;
+            pSirSmeJoinRsp->HTProfile.apCenterChan =
+                                  psessionEntry->apCenterChan;
+            pSirSmeJoinRsp->HTProfile.apChanWidth =
+                                  psessionEntry->apChanWidth;
 #endif
-            }
 #endif
         }
         else
@@ -783,8 +780,8 @@ limSendSmeStartBssRsp(tpAniSirGlobal pMac,
                        * pointer to ieFields.
                        */
                       pSirSmeRsp->bssDescription.length =
-                              ((uintptr_t)OFFSET_OF(tSirBssDescription, ieFields))
-                               - sizeof(pSirSmeRsp->bssDescription.length) + ieLen;
+                              sizeof(pSirSmeRsp->bssDescription) -
+                              sizeof(tANI_U16) - sizeof(tANI_U32) + ieLen;
                       /*
                        * This is the size of the message, subtract the size of
                        * the pointer to ieFields
@@ -792,29 +789,26 @@ limSendSmeStartBssRsp(tpAniSirGlobal pMac,
                       size += ieLen - sizeof(tANI_U32);
                 }
 #ifdef FEATURE_WLAN_MCC_TO_SCC_SWITCH
-                if (psessionEntry->cc_switch_mode
-                                             != VOS_MCC_TO_SCC_SWITCH_DISABLE) {
-                    pSirSmeRsp->HTProfile.htSupportedChannelWidthSet =
-                                      psessionEntry->htSupportedChannelWidthSet;
-                    pSirSmeRsp->HTProfile.htRecommendedTxWidthSet =
-                                      psessionEntry->htRecommendedTxWidthSet;
-                    pSirSmeRsp->HTProfile.htSecondaryChannelOffset =
-                                      psessionEntry->htSecondaryChannelOffset;
-                    pSirSmeRsp->HTProfile.dot11mode =
-                                      psessionEntry->dot11mode;
-                    pSirSmeRsp->HTProfile.htCapability =
-                                      psessionEntry->htCapability;
+                pSirSmeRsp->HTProfile.htSupportedChannelWidthSet =
+                                  psessionEntry->htSupportedChannelWidthSet;
+                pSirSmeRsp->HTProfile.htRecommendedTxWidthSet =
+                                  psessionEntry->htRecommendedTxWidthSet;
+                pSirSmeRsp->HTProfile.htSecondaryChannelOffset =
+                                  psessionEntry->htSecondaryChannelOffset;
+                pSirSmeRsp->HTProfile.dot11mode =
+                                  psessionEntry->dot11mode;
+                pSirSmeRsp->HTProfile.htCapability =
+                                  psessionEntry->htCapability;
 #ifdef WLAN_FEATURE_11AC
-                    pSirSmeRsp->HTProfile.vhtCapability =
-                                      psessionEntry->vhtCapability;
-                    pSirSmeRsp->HTProfile.vhtTxChannelWidthSet =
-                                      psessionEntry->vhtTxChannelWidthSet;
-                    pSirSmeRsp->HTProfile.apCenterChan =
-                                      psessionEntry->apCenterChan;
-                    pSirSmeRsp->HTProfile.apChanWidth =
-                                      psessionEntry->apChanWidth;
+                pSirSmeRsp->HTProfile.vhtCapability =
+                                  psessionEntry->vhtCapability;
+                pSirSmeRsp->HTProfile.vhtTxChannelWidthSet =
+                                  psessionEntry->vhtTxChannelWidthSet;
+                pSirSmeRsp->HTProfile.apCenterChan =
+                                  psessionEntry->apCenterChan;
+                pSirSmeRsp->HTProfile.apChanWidth =
+                                  psessionEntry->apChanWidth;
 #endif
-                }
 #endif
         }
     }
@@ -1704,7 +1698,7 @@ limSendSmeDisassocInd(tpAniSirGlobal pMac, tpDphHashNode pStaDs,tpPESession pses
 
     pSirSmeDisassocInd->sessionId     =  psessionEntry->smeSessionId;
     pSirSmeDisassocInd->transactionId =  psessionEntry->transactionId;
-    pSirSmeDisassocInd->statusCode    =  pStaDs->mlmStaContext.disassocReason;
+    pSirSmeDisassocInd->statusCode    =  eSIR_SME_DEAUTH_STATUS;
     pSirSmeDisassocInd->reasonCode    =  pStaDs->mlmStaContext.disassocReason;
 
     vos_mem_copy( pSirSmeDisassocInd->bssId, psessionEntry->bssId, sizeof(tSirMacAddr));
