@@ -20,7 +20,7 @@ LIBGCC 		:= $(shell $(CC) $(KBUILD_CFLAGS) -print-libgcc-file-name)
 KBUILD_DEFCONFIG := defconfig
 
 ARM_ARCH_OPT := -mcpu=cortex-a57.cortex-a53 -mtune=cortex-a57.cortex-a53
-GEN_OPT_FLAGS := $(call cc-option,$(ARM_ARCH_OPT),-march=armv8-a) \
+GEN_OPT_FLAGS := $(call cc-option,$(ARM_ARCH_OPT)) \
  -g0 \
  -DNDEBUG \
  -fomit-frame-pointer \
