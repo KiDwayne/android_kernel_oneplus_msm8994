@@ -364,16 +364,7 @@ GEN_OPT_FLAGS := -g0 \
  -fmodulo-sched-allow-regmoves \
  -fivopts \
  -Wno-array-bounds \
- -fno-code-hoisting \
- -fno-fp-int-builtin-inexact \
- -fno-ipa-bit-cp \
- -fno-ipa-icf-variables \
- -fno-ipa-vrp \
- -fno-printf-return-value \
- -fno-shrink-wrap-separate \
- -fno-store-merging \
- -fno-peel-loops \
- -fno-split-loops
+ -fno-store-merging
  
 # Use USERINCLUDE when you must reference the UAPI directories only.
 USERINCLUDE    := \
