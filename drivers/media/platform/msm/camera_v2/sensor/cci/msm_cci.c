@@ -336,7 +336,7 @@ static int32_t msm_cci_calc_cmd_len(struct cci_device *cci_dev,
 		pack_max_len = size < (cci_dev->payload_size-len) ?
 			size : (cci_dev->payload_size-len);
 		for (i = 0; i < pack_max_len;) {
-			if (cmd->delay)
+			if (cmd->delay || ((cmd - i2c_cmd) >= (cmd_size-1)))
 				break;
 			if (cmd->reg_addr + 1 ==
 				(cmd+1)->reg_addr) {
@@ -724,17 +724,17 @@ static int32_t msm_cci_i2c_read(struct v4l2_subdev *sd,
 	struct cci_device *cci_dev = NULL;
 	struct msm_camera_cci_i2c_read_cfg *read_cfg = NULL;
 
-	CDBG("%s line %d\n", __func__, __LINE__);
+        CDBG("%s line %d\n", __func__, __LINE__);
 	cci_dev = v4l2_get_subdevdata(sd);
 	master = c_ctrl->cci_info->cci_i2c_master;
 	read_cfg = &c_ctrl->cfg.cci_i2c_read_cfg;
-	
-	if (master >= MASTER_MAX || master < 0) {
+
+        if (master >= MASTER_MAX || master < 0) {
 		pr_err("%s:%d Invalid I2C master %d\n",
 			__func__, __LINE__, master);
-		return -EINVAL;
-	}
-	
+        	return -EINVAL;
+        }
+
 	mutex_lock(&cci_dev->cci_master_info[master].mutex_q[queue]);
 
 	/*
