@@ -90,30 +90,6 @@
 #define CREATE_TRACE_POINTS
 #include <trace/events/sched.h>
 
-#include <soc/qcom/watchdog.h>
-
-#define DLOG_SIZE 15000
-#define MAX_CTXSW_LATENCY 1000000000
-static DEFINE_PER_CPU(char[DLOG_SIZE], dbuf);
-static DEFINE_PER_CPU(char *, dptr);
-
-#define dlog(x...)					\
-do {							\
-	unsigned long dflags;				\
-	char *ptr, *buf;				\
-	int dcpu;					\
-	local_irq_save(dflags);				\
-	dcpu = smp_processor_id();			\
-	buf = per_cpu(dbuf, dcpu);			\
-	ptr = per_cpu(dptr, dcpu);			\
-	ptr += snprintf(ptr, 10, "CPU %d ", dcpu);	\
-	ptr += snprintf(ptr, 490, x);			\
-	if (ptr - buf > DLOG_SIZE - 500)		\
-		ptr = buf;				\
-	per_cpu(dptr, dcpu) = ptr;			\
-	local_irq_restore(dflags);			\
-} while (0)
-
 const char *task_event_names[] = {"PUT_PREV_TASK", "PICK_NEXT_TASK",
 				  "TASK_WAKE", "TASK_MIGRATE", "TASK_UPDATE",
 				"IRQ_UPDATE"};
@@ -1328,8 +1304,6 @@ static inline unsigned int load_to_freq(struct rq *rq, u64 load)
 static int send_notification(struct rq *rq)
 {
 	unsigned int cur_freq, freq_required;
-	unsigned long flags;
-	int rc = 0;
 
 	if (!sched_enable_hmp)
 		return 0;
@@ -1340,14 +1314,7 @@ static int send_notification(struct rq *rq)
 	if (nearly_same_freq(cur_freq, freq_required))
 		return 0;
 
-	raw_spin_lock_irqsave(&rq->lock, flags);
-	if (!rq->notifier_sent) {
-		rq->notifier_sent = 1;
-		rc = 1;
-	}
-	raw_spin_unlock_irqrestore(&rq->lock, flags);
-
-	return rc;
+	return 1;
 }
 
 /* Alert governor if there is a need to change frequency */
@@ -2127,12 +2094,6 @@ void reset_all_window_stats(u64 window_start, unsigned int window_size)
 
 #ifdef CONFIG_SCHED_FREQ_INPUT
 
-static inline u64
-scale_load_to_freq(u64 load, unsigned int src_freq, unsigned int dst_freq)
-{
-	return div64_u64(load * (u64)src_freq, (u64)dst_freq);
-}
-
 unsigned long sched_get_busy(int cpu)
 {
 	unsigned long flags;
@@ -2147,6 +2108,7 @@ unsigned long sched_get_busy(int cpu)
 	raw_spin_lock_irqsave(&rq->lock, flags);
 	update_task_ravg(rq->curr, rq, TASK_UPDATE, sched_clock(), 0);
 	load = rq->old_busy_time = rq->prev_runnable_sum;
+	raw_spin_unlock_irqrestore(&rq->lock, flags);
 
 	/*
 	 * Scale load in reference to rq->max_possible_freq.
@@ -2155,25 +2117,8 @@ unsigned long sched_get_busy(int cpu)
 	 * rq->max_freq
 	 */
 	load = scale_load_to_cpu(load, cpu);
-
-	if (!rq->notifier_sent) {
-		u64 load_at_cur_freq;
-
-		load_at_cur_freq = scale_load_to_freq(load, rq->max_freq,
-								 rq->cur_freq);
-		if (load_at_cur_freq > sched_ravg_window)
-			load_at_cur_freq = sched_ravg_window;
-		load = scale_load_to_freq(load_at_cur_freq,
-					 rq->cur_freq, rq->max_possible_freq);
-	} else {
-		load = scale_load_to_freq(load, rq->max_freq,
-						 rq->max_possible_freq);
-		rq->notifier_sent = 0;
-	}
-
+	load = div64_u64(load * (u64)rq->max_freq, (u64)rq->max_possible_freq);
 	load = div64_u64(load, NSEC_PER_USEC);
-
-	raw_spin_unlock_irqrestore(&rq->lock, flags);
 
 	trace_sched_get_busy(cpu, load);
 
@@ -2319,10 +2264,8 @@ static void __update_min_max_capacity(void)
 
 static void update_min_max_capacity(void)
 {
-	unsigned long flags;
 	int i;
 
-	local_irq_save(flags);
 	for_each_possible_cpu(i)
 		raw_spin_lock(&cpu_rq(i)->lock);
 
@@ -2330,7 +2273,6 @@ static void update_min_max_capacity(void)
 
 	for_each_possible_cpu(i)
 		raw_spin_unlock(&cpu_rq(i)->lock);
-	local_irq_restore(flags);
 }
 
 /*
@@ -3203,25 +3145,6 @@ try_to_wake_up(struct task_struct *p, unsigned int state, int wake_flags)
 
 #ifdef CONFIG_SMP
 	/*
-	 * Ensure we load p->on_cpu _after_ p->on_rq, otherwise it would be
-	 * possible to, falsely, observe p->on_cpu == 0.
-	 *
-	 * One must be running (->on_cpu == 1) in order to remove oneself
-	 * from the runqueue.
-	 *
-	 *  [S] ->on_cpu = 1;	[L] ->on_rq
-	 *      UNLOCK rq->lock
-	 *			RMB
-	 *      LOCK   rq->lock
-	 *  [S] ->on_rq = 0;    [L] ->on_cpu
-	 *
-	 * Pairs with the full barrier implied in the UNLOCK+LOCK on rq->lock
-	 * from the consecutive calls to schedule(); the first switching to our
-	 * task, the second putting it to sleep.
-	 */
-	smp_rmb();
-
-	/*
 	 * If the owning (remote) cpu is still in the middle of schedule() with
 	 * this task as prev, wait until its done referencing the task.
 	 */
@@ -3620,9 +3543,6 @@ prepare_task_switch(struct rq *rq, struct task_struct *prev,
 		    struct task_struct *next)
 {
 	trace_sched_switch(prev, next);
-#ifdef CONFIG_ARCH_WANTS_CTXSW_LOGGING
-	dlog("%s: end trace at %llu\n", __func__, sched_clock());
-#endif
 	sched_info_switch(prev, next);
 	perf_event_task_sched_out(prev, next);
 	fire_sched_out_preempt_notifiers(prev, next);
@@ -3756,19 +3676,11 @@ context_switch(struct rq *rq, struct task_struct *prev,
 	       struct task_struct *next)
 {
 	struct mm_struct *mm, *oldmm;
-#ifdef CONFIG_ARCH_WANTS_CTXSW_LOGGING
-	u64 start, end;
-#endif
 
 	prepare_task_switch(rq, prev, next);
 
 	mm = next->mm;
 	oldmm = prev->active_mm;
-
-#ifdef CONFIG_ARCH_WANTS_CTXSW_LOGGING
-	start = sched_clock();
-	dlog("%s: n_mm: %p, finish pts at %llu\n", __func__, mm, start);
-#endif
 	/*
 	 * For paravirt, this is coupled with an exit in switch_to to
 	 * combine the page table reload and the switch backend into
@@ -3787,15 +3699,6 @@ context_switch(struct rq *rq, struct task_struct *prev,
 		prev->active_mm = NULL;
 		rq->prev_mm = oldmm;
 	}
-
-#ifdef CONFIG_ARCH_WANTS_CTXSW_LOGGING
-	end = sched_clock();
-	dlog("%s: start task switch at %llu\n", __func__, end);
-
-	if (end - start > MAX_CTXSW_LATENCY)
-		msm_trigger_wdog_bite();
-#endif
-
 	/*
 	 * Since the runqueue lock will be released by the next
 	 * task (which is an invalid locking op but in the case
@@ -4778,10 +4681,6 @@ need_resched:
 	smp_mb__before_spinlock();
 	raw_spin_lock_irq(&rq->lock);
 
-#ifdef CONFIG_ARCH_WANTS_CTXSW_LOGGING
-	dlog("%s: locked %p at %llu\n", __func__, &rq->lock, sched_clock());
-#endif
-
 	switch_count = &prev->nivcsw;
 	if (prev->state && !(preempt_count() & PREEMPT_ACTIVE)) {
 		if (unlikely(signal_pending_state(prev->state, prev))) {
@@ -4826,10 +4725,6 @@ need_resched:
 		rq->curr = next;
 		++*switch_count;
 
-#ifdef CONFIG_ARCH_WANTS_CTXSW_LOGGING
-		dlog("%s: enter context_switch at %llu\n",
-						__func__, sched_clock());
-#endif
 		context_switch(rq, prev, next); /* unlocks the rq */
 		/*
 		 * The context switch have flipped the stack from under us
@@ -5894,7 +5789,6 @@ int sched_setscheduler_nocheck(struct task_struct *p, int policy,
 	};
 	return __sched_setscheduler(p, &attr, false);
 }
-EXPORT_SYMBOL(sched_setscheduler_nocheck);
 
 static int
 do_sched_setscheduler(pid_t pid, int policy, struct sched_param __user *param)
@@ -7281,7 +7175,6 @@ migration_call(struct notifier_block *nfb, unsigned long action, void *hcpu)
 		set_window_start(rq);
 		raw_spin_unlock_irqrestore(&rq->lock, flags);
 		rq->calc_load_update = calc_load_update;
-		account_reset_rq(rq);
 		break;
 
 	case CPU_ONLINE:
@@ -9067,7 +8960,6 @@ void __init sched_init(void)
 	for_each_possible_cpu(i) {
 		struct rq *rq;
 
-		per_cpu(dptr, i) = per_cpu(dbuf, i);
 		rq = cpu_rq(i);
 		raw_spin_lock_init(&rq->lock);
 		rq->nr_running = 0;
@@ -9129,7 +9021,6 @@ void __init sched_init(void)
 		rq->wakeup_latency = 0;
 		rq->wakeup_energy = 0;
 #ifdef CONFIG_SCHED_HMP
-		cpumask_set_cpu(i, &rq->freq_domain_cpumask);
 		rq->cur_freq = 1;
 		rq->max_freq = 1;
 		rq->min_freq = 1;
@@ -9152,7 +9043,6 @@ void __init sched_init(void)
 #ifdef CONFIG_SCHED_FREQ_INPUT
 		rq->old_busy_time = 0;
 		rq->curr_runnable_sum = rq->prev_runnable_sum = 0;
-		rq->notifier_sent = 0;
 #endif
 #endif
 
