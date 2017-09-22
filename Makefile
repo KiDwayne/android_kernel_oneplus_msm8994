@@ -261,6 +261,7 @@ FLAGS_OPTIMIZE := -falign-functions=32 -fgcse-las -fivopts \
 	-fmodulo-sched \
 	-fmodulo-sched-allow-regmoves \
 	-frerun-cse-after-loop \
+	-funroll-loops \
 	-frename-registers \
 	$(GRAPHITE)
 
