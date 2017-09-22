@@ -278,6 +278,8 @@ static __init int sel_netif_init(void)
 {
 	int i, err;
 
+	selinux_enabled = 1;
+
 	if (!selinux_enabled)
 		return 0;
 
