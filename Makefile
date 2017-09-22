@@ -262,6 +262,7 @@ FLAGS_OPTIMIZE := -falign-functions=32 -fgcse-las -fivopts \
 	-fmodulo-sched-allow-regmoves \
 	-frerun-cse-after-loop \
 	-funroll-loops \
+	-ftree-vectorize \
 	-frename-registers \
 	$(GRAPHITE)
 
@@ -356,7 +357,7 @@ AS		= $(CROSS_COMPILE)as
 LD		= $(CROSS_COMPILE)ld
 CC		= $(which ccache) $(CROSS_COMPILE)gcc
 LD		+= -Ofast --strip-debug
-CC		+= -Ofast
+CC		+= -Ofast $(FLAGS_OPTIMIZE) $(GRAPHITE)
 CC		+= -fmodulo-sched -fmodulo-sched-allow-regmoves
 CC		+= -fgraphite-identity -floop-block -floop-interchange -floop-strip-mine
 CC		+= -ftree-loop-linear -ftree-loop-distribution
@@ -376,11 +377,11 @@ CHECK		= sparse
 
 CHECKFLAGS     := -D__linux__ -Dlinux -D__STDC__ -Dunix -D__unix__ \
 		  -Wbitwise -Wno-return-void $(CF)
-CFLAGS_MODULE   = $(GRAPHITE)
-AFLAGS_MODULE   = $(GRAPHITE)
+CFLAGS_MODULE   = $(FLAGS_OPTIMIZE) $(GRAPHITE)
+AFLAGS_MODULE   = $(FLAGS_OPTIMIZE) $(GRAPHITE)
 LDFLAGS_MODULE  = --strip-debug
-CFLAGS_KERNEL	= $(GRAPHITE) -mcpu=cortex-a57.cortex-a53+crypto+crc -mtune=cortex-a57.cortex-a53 -march=armv8-a+crypto+crc
-AFLAGS_KERNEL	= $(GRAPHITE)
+CFLAGS_KERNEL	= $(FLAGS_OPTIMIZE) $(GRAPHITE) -mcpu=cortex-a57.cortex-a53+crypto+crc -mtune=cortex-a57.cortex-a53 -march=armv8-a+crypto+crc
+AFLAGS_KERNEL	= $(FLAGS_OPTIMIZE) $(GRAPHITE)
 CFLAGS_GCOV	= -fprofile-arcs -ftest-coverage
 
 
