@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013-2016 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2013-2017 The Linux Foundation. All rights reserved.
  *
  * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
  *
@@ -194,33 +194,6 @@
 #define WMA_IPV6_PROTO_GET_MIN_LEN        21
 #define WMA_IPV6_PKT_INFO_GET_MIN_LEN     62
 #define WMA_ICMPV6_SUBTYPE_GET_MIN_LEN    55
-
-/* Beacon data rate changes */
-#define WMA_BEACON_TX_RATE_HW_CODE_1_M    0x43
-#define WMA_BEACON_TX_RATE_HW_CODE_2_M    0x42
-#define WMA_BEACON_TX_RATE_HW_CODE_5_5_M  0x41
-#define WMA_BEACON_TX_RATE_HW_CODE_11M    0x40
-#define WMA_BEACON_TX_RATE_HW_CODE_6_M    0x03
-#define WMA_BEACON_TX_RATE_HW_CODE_9_M    0x07
-#define WMA_BEACON_TX_RATE_HW_CODE_12_M   0x02
-#define WMA_BEACON_TX_RATE_HW_CODE_18_M   0x06
-#define WMA_BEACON_TX_RATE_HW_CODE_24_M   0x01
-#define WMA_BEACON_TX_RATE_HW_CODE_36_M   0x05
-#define WMA_BEACON_TX_RATE_HW_CODE_48_M   0x00
-#define WMA_BEACON_TX_RATE_HW_CODE_54_M   0x04
-
-#define WMA_BEACON_TX_RATE_1_M            10
-#define WMA_BEACON_TX_RATE_2_M            20
-#define WMA_BEACON_TX_RATE_5_5_M          55
-#define WMA_BEACON_TX_RATE_11_M           110
-#define WMA_BEACON_TX_RATE_6_M            60
-#define WMA_BEACON_TX_RATE_9_M            90
-#define WMA_BEACON_TX_RATE_12_M           120
-#define WMA_BEACON_TX_RATE_18_M           180
-#define WMA_BEACON_TX_RATE_24_M           240
-#define WMA_BEACON_TX_RATE_36_M           360
-#define WMA_BEACON_TX_RATE_48_M           480
-#define WMA_BEACON_TX_RATE_54_M           540
 
 /*
  * ds_mode: distribution system mode
@@ -621,6 +594,7 @@ struct wma_txrx_node {
 #if defined WLAN_FEATURE_VOWIFI_11R
         void    *staKeyParams;
 #endif
+	v_BOOL_t ps_enabled;
 	u_int32_t dtim_policy;
 	u_int32_t peer_count;
 	v_BOOL_t roam_synch_in_progress;
@@ -640,7 +614,7 @@ struct wma_txrx_node {
 
 	uint8_t wep_default_key_idx;
 	bool is_vdev_valid;
-
+	struct action_frame_random_filter *action_frame_filter;
 };
 
 #if defined(QCA_WIFI_FTM)
@@ -839,6 +813,13 @@ typedef struct wma_handle {
 	vos_wake_lock_t extscan_wake_lock;
 #endif
 	vos_wake_lock_t wow_wake_lock;
+	vos_wake_lock_t wow_auth_req_wl;
+	vos_wake_lock_t wow_assoc_req_wl;
+	vos_wake_lock_t wow_deauth_rec_wl;
+	vos_wake_lock_t wow_disassoc_rec_wl;
+	vos_wake_lock_t wow_ap_assoc_lost_wl;
+	vos_wake_lock_t wow_auto_shutdown_wl;
+
 	int wow_nack;
 	u_int32_t ap_client_cnt;
 	adf_os_atomic_t is_wow_bus_suspended;
@@ -922,7 +903,6 @@ typedef struct wma_handle {
 	struct wma_runtime_pm_context runtime_context;
 	uint32_t fine_time_measurement_cap;
 	bool bpf_enabled;
-	bool bpf_packet_filter_enable;
 	bool pause_other_vdev_on_mcc_start;
 
 	/* NAN datapath support enabled in firmware */
@@ -930,7 +910,6 @@ typedef struct wma_handle {
 	tSirLLStatsResults *link_stats_results;
 	vos_timer_t wma_fw_time_sync_timer;
 	struct sir_allowed_action_frames allowed_action_frames;
-	tSirAddonPsReq psSetting;
 }t_wma_handle, *tp_wma_handle;
 
 struct wma_target_cap {
@@ -1365,7 +1344,6 @@ struct wma_vdev_start_req {
 	u_int8_t dot11_mode;
 	bool is_half_rate;
 	bool is_quarter_rate;
-	u_int16_t beacon_tx_rate;
 };
 
 struct wma_set_key_params {
@@ -1465,6 +1443,8 @@ VOS_STATUS wma_send_snr_request(tp_wma_handle wma_handle, void *pGetRssiReq,
 #define WMA_DISASSOC_RECV_WAKE_LOCK_DURATION	(5 * 1000) /* in msec */
 #ifdef FEATURE_WLAN_AUTO_SHUTDOWN
 #define WMA_AUTO_SHUTDOWN_WAKE_LOCK_DURATION    (5 * 1000) /* in msec */
+#else
+#define WMA_AUTO_SHUTDOWN_WAKE_LOCK_DURATION 0
 #endif
 #define WMA_BMISS_EVENT_WAKE_LOCK_DURATION      (4 * 1000) /* in msec */
 
@@ -1791,7 +1771,6 @@ uint32_t wma_get_vht_ch_width(void);
 VOS_STATUS wma_get_wakelock_stats(struct sir_wake_lock_stats *wake_lock_stats);
 VOS_STATUS wma_set_tx_rx_aggregation_size
 	(struct sir_set_tx_rx_aggregation_size *tx_rx_aggregation_size);
-VOS_STATUS wma_set_powersave_config(uint8_t val);
 
 /**
  * wma_find_vdev_by_id() - Find vdev handle for given vdev id.

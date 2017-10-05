@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011-2016 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2011-2017 The Linux Foundation. All rights reserved.
  *
  * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
  *
@@ -1268,11 +1268,12 @@ ol_rx_in_order_indication_handler(
  */
 void ol_rx_pkt_dump_call(
 	adf_nbuf_t msdu,
-	struct ol_txrx_peer_t *peer,
+	uint16_t peer_id,
 	uint8_t status)
 {
 	v_CONTEXT_t vos_context;
 	ol_txrx_pdev_handle pdev;
+	struct ol_txrx_peer_t *peer = NULL;
 
 	vos_context = vos_get_global_context(VOS_MODULE_ID_TXRX, NULL);
 	pdev = vos_get_context(VOS_MODULE_ID_TXRX, vos_context);
@@ -1284,8 +1285,13 @@ void ol_rx_pkt_dump_call(
 	}
 
 	if (pdev->ol_rx_packetdump_cb) {
-		if (!peer)
+		peer = ol_txrx_peer_find_by_id(pdev, peer_id);
+		if (!peer) {
+			TXRX_PRINT(TXRX_PRINT_LEVEL_ERR,
+				"%s: peer with peer id %d is NULL", __func__,
+				peer_id);
 			return;
+		}
 		pdev->ol_rx_packetdump_cb(msdu, status, peer->vdev->vdev_id,
 						RX_DATA_PKT);
 	}

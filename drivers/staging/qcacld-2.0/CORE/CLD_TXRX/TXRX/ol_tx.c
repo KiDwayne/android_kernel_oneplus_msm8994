@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011-2014, 2016 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2011-2014, 2016-2017 The Linux Foundation. All rights reserved.
  *
  * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
  *
@@ -80,12 +80,6 @@ ol_tx_ll(ol_txrx_vdev_handle vdev, adf_nbuf_t msdu_list)
     struct ol_txrx_msdu_info_t msdu_info;
     v_CONTEXT_t vos_ctx = vos_get_global_context(VOS_MODULE_ID_SYS, NULL);
     void *adf_ctx = vos_get_context(VOS_MODULE_ID_ADF, vos_ctx);
-
-    if (!adf_ctx) {
-        TXRX_PRINT(TXRX_PRINT_LEVEL_ERR,
-                   "%s: adf_ctx is NULL\n", __func__);
-        return msdu_list;
-    }
 
     msdu_info.htt.info.l2_hdr_type = vdev->pdev->htt_pkt_type;
     msdu_info.htt.action.tx_comp_req = 0;
@@ -852,7 +846,7 @@ ol_tx_pdev_reset_bundle_require(void* pdev_handle)
 
 	TAILQ_FOREACH(vdev, &pdev->vdev_list, vdev_list_elem) {
 		vdev->bundling_reqired = false;
-		TXRX_PRINT(TXRX_PRINT_LEVEL_INFO1,
+		TXRX_PRINT(TXRX_PRINT_LEVEL_ERR,
 			"vdev_id %d bundle_require %d\n",
 			vdev->vdev_id, vdev->bundling_reqired);
     }
@@ -885,7 +879,7 @@ ol_tx_vdev_set_bundle_require(uint8_t vdev_id, unsigned long tx_bytes,
 		vdev->bundling_reqired = false;
 
 	if (old_bundle_required != vdev->bundling_reqired)
-		TXRX_PRINT(TXRX_PRINT_LEVEL_INFO1,
+		TXRX_PRINT(TXRX_PRINT_LEVEL_ERR,
 			"vdev_id %d bundle_require %d tx_bytes %ld time_in_ms %d high_th %d low_th %d\n",
 			vdev->vdev_id, vdev->bundling_reqired, tx_bytes,
 			time_in_ms, high_th, low_th);

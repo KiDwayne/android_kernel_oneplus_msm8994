@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013-2016 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2013-2017 The Linux Foundation. All rights reserved.
  *
  * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
  *
@@ -678,7 +678,7 @@ static A_STATUS HTCIssuePackets(HTC_TARGET       *target,
             ("htc_issue_packets, failed pkt:0x%p status:%d",
             pPacket, status));
 
-    AR_DEBUG_PRINTF(ATH_DEBUG_SEND, ("-HTCIssuePackets \n"));
+    AR_DEBUG_PRINTF(ATH_DEBUG_SEND, ("-HTCIssuePackets\n"));
 
     return status;
 }
@@ -1114,14 +1114,10 @@ static HTC_SEND_QUEUE_RESULT HTCTrySend(HTC_TARGET       *target,
             /*
              * Header and payload belongs to the different fragments and
              * consume 2 resource for one HTC package but USB conbime into
-             * one transfer. And one WMI message only consumes one single
-             * resource.
+             * one transfer.
              */
             if (HTC_ENABLE_BUNDLE(target) && tx_resources) {
-                if (pEndpoint->ServiceID == WMI_CONTROL_SVC)
-                    tx_resources = HTC_MAX_MSG_PER_BUNDLE_TX;
-                else
-                    tx_resources = (HTC_MAX_MSG_PER_BUNDLE_TX * 2);
+                tx_resources = (HTC_MAX_MSG_PER_BUNDLE_TX * 2);
             }
 #endif
 #endif
@@ -1137,7 +1133,7 @@ static HTC_SEND_QUEUE_RESULT HTCTrySend(HTC_TARGET       *target,
         UNLOCK_HTC_TX(target);
 
             /* send what we can */
-        result = HTCIssuePackets(target,pEndpoint,&sendQueue);
+        result = HTCIssuePackets(target, pEndpoint, &sendQueue);
         if (result) {
             AR_DEBUG_PRINTF(ATH_DEBUG_ERR,
                ("htc_issue_packets, failed status:%d put it back to head of callers SendQueue",
@@ -1844,7 +1840,21 @@ void HTCProcessCreditRpt(HTC_TARGET *target, HTC_CREDIT_REPORT *pRpt, int NumEnt
             if (pEndpoint->ServiceID == HTT_DATA_MSG_SVC){
                 HTCSendDataPkt(target, NULL, 0);
             } else {
-                HTCTrySend(target,pEndpoint,NULL);
+#ifdef HIF_SDIO
+                if (WLAN_IS_EPPING_ENABLED(vos_get_conparam())) {
+                    if (((pEndpoint->ServiceID == WMI_DATA_BE_SVC) &&
+                        (pEndpoint->TxCreditFlowEnabled)          &&
+                        (pEndpoint->TxCredits >= HTC_MAX_MSG_PER_BUNDLE_TX + 1)) ||
+                        (target->is_nodrop_pkt)) {
+                        /* Bundle TX for mboxping test */
+                        HTCTrySend(target, pEndpoint, NULL);
+                    }
+                } else {
+#endif
+                    HTCTrySend(target,pEndpoint,NULL);
+#ifdef HIF_SDIO
+                }
+#endif
             }
 #endif
             LOCK_HTC_TX(target);

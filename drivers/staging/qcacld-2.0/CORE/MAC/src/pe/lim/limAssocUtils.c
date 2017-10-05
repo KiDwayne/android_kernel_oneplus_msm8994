@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011-2017 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2011-2016 The Linux Foundation. All rights reserved.
  *
  * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
  *
@@ -774,6 +774,12 @@ limSendDelStaCnf(tpAniSirGlobal pMac, tSirMacAddr staDsAddr,
         }
 
         psessionEntry->limAID = 0;
+
+    } else if (
+       (mlmStaContext.cleanupTrigger == eLIM_LINK_MONITORING_DISASSOC) ||
+       (mlmStaContext.cleanupTrigger == eLIM_LINK_MONITORING_DEAUTH)) {
+       /* only for non-STA cases PE/SME is serialized */
+       return;
     }
 
     if ((mlmStaContext.cleanupTrigger ==
@@ -2647,6 +2653,13 @@ limAddSta(
     }
 #endif
 
+    //Disable BA. It will be set as part of ADDBA negotiation.
+    for( i = 0; i < STACFG_MAX_TC; i++ )
+    {
+          pAddStaParams->staTCParams[i].txUseBA = eBA_DISABLE;
+          pAddStaParams->staTCParams[i].rxUseBA = eBA_DISABLE;
+    }
+
 #ifdef FEATURE_WLAN_TDLS
     if(pStaDs->wmeEnabled &&
       (LIM_IS_AP_ROLE(psessionEntry) ||
@@ -3489,7 +3502,7 @@ limCheckAndAnnounceJoinSuccess(tpAniSirGlobal pMac,
         limPostSmeMessage(pMac, LIM_MLM_JOIN_CNF, (tANI_U32 *) &mlmJoinCnf);
     } // if ((pMac->lim.gLimSystemRole == IBSS....
 
-    if (psessionEntry->vhtCapability && pBPR->vendor2_ie.VHTCaps.present) {
+    if (pBPR->vendor2_ie.VHTCaps.present) {
         psessionEntry->is_vendor_specific_vhtcaps = true;
         psessionEntry->vendor_specific_vht_ie_type =
             pBPR->vendor2_ie.type;
@@ -3753,6 +3766,7 @@ tSirRetStatus limStaSendAddBss( tpAniSirGlobal pMac, tpSirAssocRsp pAssocRsp,
     tSirMsgQ msgQ;
     tpAddBssParams pAddBssParams = NULL;
     tSirRetStatus retCode = eSIR_SUCCESS;
+    tANI_U8 i;
     tpDphHashNode pStaDs = NULL;
     tANI_U8 chanWidthSupp = 0;
     tANI_U32 shortGi20MhzSupport;
@@ -4002,13 +4016,13 @@ tSirRetStatus limStaSendAddBss( tpAniSirGlobal pMac, tpSirAssocRsp pAssocRsp,
                 }
                 if ((vht_caps != NULL) && (vht_caps->suBeamFormerCap ||
                       vht_caps->muBeamformerCap) &&
-                      psessionEntry->txBFIniFeatureEnabled)
+                     psessionEntry->txBFIniFeatureEnabled)
                     pAddBssParams->staContext.vhtTxBFCapable = 1;
                 if ((vht_caps != NULL) &&
                             vht_caps->muBeamformerCap &&
                            psessionEntry->txMuBformee)
                     pAddBssParams->staContext.vhtTxMUBformeeCapable = 1;
-            }
+                }
 #endif
             if( (pAssocRsp->HTCaps.supportedChannelWidthSet) &&
                 (chanWidthSupp) )
@@ -4191,6 +4205,15 @@ tSirRetStatus limStaSendAddBss( tpAniSirGlobal pMac, tpSirAssocRsp pAssocRsp,
 
     }
 
+    //Disable BA. It will be set as part of ADDBA negotiation.
+    for( i = 0; i < STACFG_MAX_TC; i++ )
+    {
+        pAddBssParams->staContext.staTCParams[i].txUseBA    = eBA_DISABLE;
+        pAddBssParams->staContext.staTCParams[i].rxUseBA    = eBA_DISABLE;
+        pAddBssParams->staContext.staTCParams[i].txBApolicy = eBA_POLICY_IMMEDIATE;
+        pAddBssParams->staContext.staTCParams[i].rxBApolicy = eBA_POLICY_IMMEDIATE;
+    }
+
     pAddBssParams->staContext.encryptType =  psessionEntry->encryptType;
 
 #if defined WLAN_FEATURE_VOWIFI
@@ -4290,6 +4313,7 @@ tSirRetStatus limStaSendAddBssPreAssoc( tpAniSirGlobal pMac, tANI_U8 updateEntry
     tSirMsgQ msgQ;
     tpAddBssParams pAddBssParams = NULL;
     tANI_U32 retCode;
+    tANI_U8 i;
     tSchBeaconStruct *pBeaconStruct;
     tANI_U8 chanWidthSupp = 0;
     tANI_U32 shortGi20MhzSupport;
@@ -4318,10 +4342,10 @@ tSirRetStatus limStaSendAddBssPreAssoc( tpAniSirGlobal pMac, tANI_U8 updateEntry
     vos_mem_set((tANI_U8 *) pAddBssParams, sizeof( tAddBssParams ), 0);
 
 
-    limExtractApCapabilities(pMac,
+    limExtractApCapabilities( pMac,
                             (tANI_U8 *) bssDescription->ieFields,
-                            GET_IE_LEN_IN_BSS(bssDescription->length),
-                            pBeaconStruct);
+                            limGetIElenFromBssDescription( bssDescription ),
+                            pBeaconStruct );
 
     if(pMac->lim.gLimProtectionControl != WNI_CFG_FORCE_POLICY_PROTECTION_DISABLE)
         limDecideStaProtectionOnAssoc(pMac, pBeaconStruct, psessionEntry);
@@ -4512,7 +4536,7 @@ tSirRetStatus limStaSendAddBssPreAssoc( tpAniSirGlobal pMac, tANI_U8 updateEntry
                      pAddBssParams->staContext.vhtTxBFCapable = 1;
                 if ((vht_caps != NULL) && vht_caps->muBeamformerCap &&
                                  psessionEntry->txMuBformee)
-                    pAddBssParams->staContext.vhtTxMUBformeeCapable = 1;
+                     pAddBssParams->staContext.vhtTxMUBformeeCapable = 1;
 
             }
 #endif
@@ -4658,6 +4682,16 @@ tSirRetStatus limStaSendAddBssPreAssoc( tpAniSirGlobal pMac, tANI_U8 updateEntry
 #endif
         limFillSupportedRatesInfo(pMac, NULL, &pAddBssParams->staContext.supportedRates,psessionEntry);
 
+    }
+
+
+    //Disable BA. It will be set as part of ADDBA negotiation.
+    for( i = 0; i < STACFG_MAX_TC; i++ )
+    {
+        pAddBssParams->staContext.staTCParams[i].txUseBA    = eBA_DISABLE;
+        pAddBssParams->staContext.staTCParams[i].rxUseBA    = eBA_DISABLE;
+        pAddBssParams->staContext.staTCParams[i].txBApolicy = eBA_POLICY_IMMEDIATE;
+        pAddBssParams->staContext.staTCParams[i].rxBApolicy = eBA_POLICY_IMMEDIATE;
     }
 
     pAddBssParams->staContext.encryptType = psessionEntry->encryptType;

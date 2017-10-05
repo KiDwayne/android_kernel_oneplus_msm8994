@@ -366,7 +366,6 @@ PopulateDot11fChanSwitchWrapper(tpAniSirGlobal pMac,
                             tDot11fIEChannelSwitchWrapper *pDot11f,
                             tpPESession psessionEntry)
 {
-    uint8_t *ie_ptr = NULL;
     /*
      * The new country subelement is present only when
      * 1. AP performs Extended Channel switching to new country.
@@ -396,20 +395,6 @@ PopulateDot11fChanSwitchWrapper(tpAniSirGlobal pMac,
                      psessionEntry->gLimWiderBWChannelSwitch.newCenterChanFreq1;
      pDot11f->WiderBWChanSwitchAnn.present = 1;
 
-     /*
-      * Add the VHT Transmit power Envelope Sublement.
-      */
-     ie_ptr = lim_get_ie_ptr(psessionEntry->addIeParams.probeRespBCNData_buff,
-               psessionEntry->addIeParams.probeRespBCNDataLen,
-               DOT11F_EID_VHT_TRANSMIT_POWER_ENV);
-     if (ie_ptr) {
-         /* Ignore EID field */
-         ie_ptr++;
-         pDot11f->vht_transmit_power_env.present = 1;
-         pDot11f->vht_transmit_power_env.num_bytes = *ie_ptr++;
-         vos_mem_copy(pDot11f->vht_transmit_power_env.bytes,
-            ie_ptr, pDot11f->vht_transmit_power_env.num_bytes);
-     }
 }
 
 #ifdef WLAN_FEATURE_11AC
@@ -1240,12 +1225,6 @@ PopulateDot11fExtCap(tpAniSirGlobal   pMac,
     }
 #endif
     p_ext_cap->extChanSwitch = 1;
-
-    if (pDot11f->present)
-    {
-        /* Need to compute the num_bytes based on bits set */
-        pDot11f->num_bytes = lim_compute_ext_cap_ie_length(pDot11f);
-    }
 
     return eSIR_SUCCESS;
 }
@@ -2237,28 +2216,7 @@ tSirRetStatus sirvalidateandrectifyies(tpAniSirGlobal pMac,
                        FL("Added RSN Capability to the RSNIE as 0x00 0x00"));
 
                 return eHAL_STATUS_SUCCESS;
-            } else {
-                /*
-                 * Workaround: Some APs may add extra 0x00 padding after IEs.
-                 * Return true to allow these probe response frames proceed.
-                 */
-                if (nFrameBytes - length > 0) {
-                    tANI_U32 i;
-                    tANI_BOOLEAN zero_padding = VOS_TRUE;
-
-                    for (i = length; i < nFrameBytes; i ++) {
-                        if (pMgmtFrame[i-1] != 0x0) {
-                            zero_padding = VOS_FALSE;
-                            break;
-                        }
-                    }
-
-                    if (zero_padding) {
-                        return eHAL_STATUS_SUCCESS;
-                    }
-                }
             }
-
             return eSIR_FAILURE;
         }
     }
@@ -2756,8 +2714,10 @@ sirConvertAssocReqFrame2Struct(tpAniSirGlobal pMac,
     if (ar->ExtCap.present)
     {
         struct s_ext_cap *p_ext_cap;
-        vos_mem_copy( &pAssocReq->ExtCap, &ar->ExtCap,
-                sizeof(tDot11fIEExtCap));
+
+        vos_mem_copy(&pAssocReq->ExtCap.bytes, &ar->ExtCap.bytes,
+                     ar->ExtCap.num_bytes);
+
         p_ext_cap = (struct s_ext_cap *)&pAssocReq->ExtCap.bytes;
         limLog(pMac, LOG1,
                FL("ExtCap present, timingMeas: %d Initiator: %d Responder: %d"),
@@ -2969,8 +2929,9 @@ sirConvertAssocRespFrame2Struct(tpAniSirGlobal pMac,
     if (ar.ExtCap.present)
     {
         struct s_ext_cap *p_ext_cap;
-        vos_mem_copy( &pAssocRsp->ExtCap, &ar.ExtCap,
-                sizeof(tDot11fIEExtCap));
+
+        vos_mem_copy(&pAssocRsp->ExtCap.bytes, &ar.ExtCap.bytes,
+                     ar.ExtCap.num_bytes);
         p_ext_cap = (struct s_ext_cap *)&pAssocRsp->ExtCap.bytes;
         limLog(pMac, LOG1,
                FL("ExtCap present, timingMeas: %d Initiator: %d Responder: %d"),
@@ -3194,8 +3155,8 @@ sirConvertReassocReqFrame2Struct(tpAniSirGlobal pMac,
     {
         struct s_ext_cap *p_ext_cap = (struct s_ext_cap *)
                                        &ar.ExtCap.bytes;
-        vos_mem_copy( &pAssocReq->ExtCap, &ar.ExtCap,
-                sizeof(tDot11fIEExtCap));
+        vos_mem_copy(&pAssocReq->ExtCap.bytes, &ar.ExtCap.bytes,
+                     ar.ExtCap.num_bytes);
         limLog(pMac, LOG1,
                FL("ExtCap present, timingMeas: %d Initiator: %d Responder: %d"),
                p_ext_cap->timingMeas, p_ext_cap->fine_time_meas_initiator,
@@ -3237,8 +3198,6 @@ sirFillBeaconMandatoryIEforEseBcnReport(tpAniSirGlobal   pMac,
         limLog(pMac, LOGE, FL("Failed to allocate memory"));
         return eSIR_FAILURE;
     }
-    vos_mem_zero(pBies, sizeof(tDot11fBeaconIEs));
-
     // delegate to the framesc-generated code,
     status = dot11fUnpackBeaconIEs( pMac, pPayload, nPayload, pBies );
 
@@ -3368,19 +3327,15 @@ sirFillBeaconMandatoryIEforEseBcnReport(tpAniSirGlobal   pMac,
         retStatus = eSIR_FAILURE;
         goto err_bcnrep;
       }
-      if (eseBcnReportMandatoryIe.supportedRates.numRates <=
-            SIR_MAC_RATESET_EID_MAX) {
-          *pos = SIR_MAC_RATESET_EID;
-          pos++;
-          *pos = eseBcnReportMandatoryIe.supportedRates.numRates;
-          pos++;
-          vos_mem_copy(pos,
+      *pos = SIR_MAC_RATESET_EID;
+      pos++;
+      *pos = eseBcnReportMandatoryIe.supportedRates.numRates;
+      pos++;
+      vos_mem_copy(pos,
                    (tANI_U8*)eseBcnReportMandatoryIe.supportedRates.rate,
                    eseBcnReportMandatoryIe.supportedRates.numRates);
-          pos += eseBcnReportMandatoryIe.supportedRates.numRates;
-          freeBytes -= (1 + 1 +
-                   eseBcnReportMandatoryIe.supportedRates.numRates);
-      }
+      pos += eseBcnReportMandatoryIe.supportedRates.numRates;
+      freeBytes -= (1 + 1 + eseBcnReportMandatoryIe.supportedRates.numRates);
     }
 
     /* Fill FH Parameter set IE */
@@ -3547,8 +3502,6 @@ sirParseBeaconIE(tpAniSirGlobal        pMac,
         limLog(pMac, LOGE, FL("Failed to allocate memory"));
         return eSIR_FAILURE;
     }
-    vos_mem_zero(pBies, sizeof(tDot11fBeaconIEs));
-
     // delegate to the framesc-generated code,
     status = dot11fUnpackBeaconIEs( pMac, pPayload, nPayload, pBies );
 
@@ -3782,6 +3735,7 @@ sirParseBeaconIE(tpAniSirGlobal        pMac,
     pBeaconStruct->Vendor1IEPresent = pBies->Vendor1IE.present;
     pBeaconStruct->Vendor3IEPresent = pBies->Vendor3IE.present;
     if (pBies->ExtCap.present) {
+        pBeaconStruct->ExtCap.present = 1;
         vos_mem_copy( &pBeaconStruct->ExtCap, &pBies->ExtCap,
                 sizeof(tDot11fIEExtCap));
     }

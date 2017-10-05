@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013-2016 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2013-2017 The Linux Foundation. All rights reserved.
  *
  * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
  *
@@ -708,6 +708,9 @@ __adf_nbuf_data_get_icmp_subtype(uint8_t *data)
 	subtype = (uint8_t)(*(uint8_t *)
 			(data + ICMP_SUBTYPE_OFFSET));
 
+	VOS_TRACE(VOS_MODULE_ID_ADF, VOS_TRACE_LEVEL_DEBUG,
+		"ICMP proto type: 0x%02x", subtype);
+
 	switch (subtype) {
 	case ICMP_REQUEST:
 		proto_subtype = ADF_PROTO_ICMP_REQ;
@@ -740,12 +743,21 @@ __adf_nbuf_data_get_icmpv6_subtype(uint8_t *data)
 	subtype = (uint8_t)(*(uint8_t *)
 			(data + ICMPV6_SUBTYPE_OFFSET));
 
+	VOS_TRACE(VOS_MODULE_ID_ADF, VOS_TRACE_LEVEL_DEBUG,
+		"ICMPv6 proto type: 0x%02x", subtype);
+
 	switch (subtype) {
 	case ICMPV6_REQUEST:
 		proto_subtype = ADF_PROTO_ICMPV6_REQ;
 		break;
 	case ICMPV6_RESPONSE:
 		proto_subtype = ADF_PROTO_ICMPV6_RES;
+		break;
+	case ICMPV6_RS:
+		proto_subtype = ADF_PROTO_ICMPV6_RS;
+		break;
+	case ICMPV6_RA:
+		proto_subtype = ADF_PROTO_ICMPV6_RA;
 		break;
 	case ICMPV6_NS:
 		proto_subtype = ADF_PROTO_ICMPV6_NS;
@@ -927,10 +939,10 @@ bool __adf_nbuf_data_is_ipv4_mcast_pkt(uint8_t *data)
 }
 
 /**
- * __adf_nbuf_data_is_ipv6_mcast_pkt() - check if it is IPV6 multicast packet.
- * @data: Pointer to IPV6 packet data buffer
+ * __adf_nbuf_data_is_ipv6_mcast_pkt() - check if it is IPv6 multicast packet.
+ * @data: Pointer to IPv6 packet data buffer
  *
- * This func. checks whether it is a IPV6 muticast packet or not.
+ * This func. checks whether it is a IPv6 multicast packet or not.
  *
  * Return: TRUE if it is a IPV6 multicast packet
  *         FALSE if not
@@ -940,15 +952,13 @@ bool __adf_nbuf_data_is_ipv6_mcast_pkt(uint8_t *data)
 	if (__adf_nbuf_data_is_ipv6_pkt(data)) {
 		uint16_t *dst_addr;
 
-		dst_addr = (uint16_t *)
-			(data + ADF_NBUF_TRAC_IPV6_DEST_ADDR_OFFSET);
+		dst_addr = (uint16_t *)(data + ADF_NBUF_TRAC_IPV6_DEST_ADDR_OFFSET);
 
 		/*
 		 * Check first byte of the IP address and if it
 		 * 0xFF00 then it is a IPV6 mcast packet.
 		 */
-		if (*dst_addr ==
-		     adf_os_cpu_to_be16(ADF_NBUF_TRAC_IPV6_DEST_ADDR))
+		if (*dst_addr == adf_os_cpu_to_be16(ADF_NBUF_TRAC_IPV6_DEST_ADDR))
 			return true;
 		else
 			return false;
@@ -1155,27 +1165,27 @@ __adf_nbuf_trace_update(struct sk_buff *buf, char *event_string)
    switch (adf_nbuf_trace_get_proto_type(buf)) {
    case NBUF_PKT_TRAC_TYPE_EAPOL:
       adf_os_mem_copy(string_buf + adf_os_str_len(event_string),
-                      "EPL", adf_os_str_len("EPL"));
+                      "EPL", NBUF_PKT_TRAC_PROTO_STRING);
       break;
    case NBUF_PKT_TRAC_TYPE_DHCP:
       adf_os_mem_copy(string_buf + adf_os_str_len(event_string),
-                      "DHC", adf_os_str_len("DHC"));
+                      "DHC", NBUF_PKT_TRAC_PROTO_STRING);
       break;
    case NBUF_PKT_TRAC_TYPE_MGMT_ACTION:
       adf_os_mem_copy(string_buf + adf_os_str_len(event_string),
-                      "MACT", adf_os_str_len("MACT"));
+                      "MACT", NBUF_PKT_TRAC_PROTO_STRING);
       break;
    case NBUF_PKT_TRAC_TYPE_ARP:
       adf_os_mem_copy(string_buf + adf_os_str_len(event_string),
-                      "ARP", adf_os_str_len("ARP"));
+                      "ARP", NBUF_PKT_TRAC_PROTO_STRING);
       break;
    case NBUF_PKT_TRAC_TYPE_NS:
       adf_os_mem_copy(string_buf + adf_os_str_len(event_string),
-                      "NS", adf_os_str_len("NS"));
+                      "NS", NBUF_PKT_TRAC_PROTO_STRING);
       break;
    case NBUF_PKT_TRAC_TYPE_NA:
       adf_os_mem_copy(string_buf + adf_os_str_len(event_string),
-                      "NA", adf_os_str_len("NA"));
+                      "NA", NBUF_PKT_TRAC_PROTO_STRING);
       break;
    default:
       break;
@@ -1252,31 +1262,12 @@ int adf_nbuf_update_radiotap(struct mon_rx_status *rx_status, adf_nbuf_t nbuf,
 }
 
 /**
- * __adf_nbuf_validate_skb_cb() - validate skb CB
- *
- * SKB control block size limit is 48 byte, add compile time
- * assert if SKB control block is exceeding 48 byte.
- *
- * Return: none
- */
-void
-__adf_nbuf_validate_skb_cb(void)
-{
-	/*
-	 * Add compile time assert if SKB control block is exceeding
-	 * 48 byte.
-	 */
-	BUILD_BUG_ON(sizeof(struct cvg_nbuf_cb) >
-		FIELD_SIZEOF(struct sk_buff, cb));
-}
-
-/**
- * __adf_nbuf_is_wai() - Check if frame is WAI
+ * __adf_nbuf_is_wai_pkt() - Check if frame is WAI
  * @data: pointer to skb data buffer
  *
- * This function checks if the frame is WAPI.
+ * This function checks if the frame is WAI.
  *
- * Return: true (1) if WAPI
+ * Return: true (1) if WAI
  *
  */
 bool __adf_nbuf_is_wai_pkt(uint8_t *data)

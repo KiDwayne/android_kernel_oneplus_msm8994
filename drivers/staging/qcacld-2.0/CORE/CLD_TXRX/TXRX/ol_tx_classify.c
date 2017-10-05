@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012-2016 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2012-2017 The Linux Foundation. All rights reserved.
  *
  * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
  *
@@ -349,7 +349,7 @@ ol_tx_classify(
     dest_addr = ol_tx_dest_addr_find(pdev, tx_nbuf);
     if (!dest_addr) {
        VOS_TRACE(VOS_MODULE_ID_TXRX, VOS_TRACE_LEVEL_ERROR,
-                 "%s: Invalid dest_addr", __func__);
+                 FL("Invalid dest_addr");
         return NULL;
     }
     if ((IEEE80211_IS_MULTICAST(dest_addr))
@@ -498,8 +498,7 @@ ol_tx_classify(
             return NULL; /* error */
         }
         TX_SCHED_DEBUG_PRINT("Peer found\n");
-        if ((adf_nbuf_get_fwd_flag(tx_nbuf) != ADF_NBUF_FWD_FLAG) &&
-                          (!peer->qos_capable)) {
+        if (!peer->qos_capable) {
             tid = OL_TX_NON_QOS_TID;
         } else if ((peer->security[OL_TXRX_PEER_SECURITY_UNICAST].sec_type
                           != htt_sec_type_wapi) &&
@@ -590,7 +589,7 @@ ol_tx_classify_mgmt(
     dest_addr = ol_tx_dest_addr_find(pdev, tx_nbuf);
     if (!dest_addr) {
        VOS_TRACE(VOS_MODULE_ID_TXRX, VOS_TRACE_LEVEL_ERROR,
-                 "%s: Invalid dest_addr", __func__);
+                 FL("Invalid dest_addr");
         return NULL;
     }
     if (IEEE80211_IS_MULTICAST(dest_addr)) {

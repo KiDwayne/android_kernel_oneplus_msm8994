@@ -310,6 +310,14 @@ typedef struct tagCsrScanRequest
     eCsrRequestType requestType;    //11d scan or full scan
     tANI_BOOLEAN p2pSearch;
     tANI_BOOLEAN skipDfsChnlInP2pSearch;
+
+    uint32_t enable_scan_randomization;
+    uint8_t mac_addr[VOS_MAC_ADDR_SIZE];
+    uint8_t mac_addr_mask[VOS_MAC_ADDR_SIZE];
+    bool ie_whitelist;
+    uint32_t probe_req_ie_bitmap[PROBE_REQ_BITMAP_LEN];
+    uint32_t num_vendor_oui;
+    struct vendor_oui *voui;
 }tCsrScanRequest;
 
 typedef struct tagCsrBGScanRequest
@@ -625,7 +633,6 @@ typedef enum
     eCSR_ROAM_RESULT_ADD_TDLS_PEER,
     eCSR_ROAM_RESULT_UPDATE_TDLS_PEER,
     eCSR_ROAM_RESULT_DELETE_TDLS_PEER,
-    eCSR_ROAM_TDLS_CHECK_BMPS,
     eCSR_ROAM_RESULT_TEARDOWN_TDLS_PEER_IND,
     eCSR_ROAM_RESULT_DELETE_ALL_TDLS_PEER_IND,
     eCSR_ROAM_RESULT_LINK_ESTABLISH_REQ_RSP,
@@ -1018,9 +1025,6 @@ typedef struct tagCsrRoamProfile
     tSirAddIeParams        addIeParams;
     uint8_t sap_dot11mc;
     bool do_not_roam;
-    uint16_t beacon_tx_rate;
-    tSirMacRateSet  supported_rates;
-    tSirMacRateSet  extended_rates;
 }tCsrRoamProfile;
 
 
@@ -1125,30 +1129,6 @@ typedef struct tagCsrNeighborRoamConfigParams
 }tCsrNeighborRoamConfigParams;
 #endif
 
-/**
- * enum sta_roam_policy_dfs_mode - state of DFS mode for STA ROME policy
- * @CSR_STA_ROAM_POLICY_NONE: DFS mode attribute is not valid
- * @CSR_STA_ROAM_POLICY_DFS_ENABLED:  DFS mode is enabled
- * @CSR_STA_ROAM_POLICY_DFS_DISABLED: DFS mode is disabled
- * @CSR_STA_ROAM_POLICY_DFS_DEPRIORITIZE: Deprioritize DFS channels in scanning
- */
-enum sta_roam_policy_dfs_mode {
-	CSR_STA_ROAM_POLICY_NONE,
-	CSR_STA_ROAM_POLICY_DFS_ENABLED,
-	CSR_STA_ROAM_POLICY_DFS_DISABLED,
-	CSR_STA_ROAM_POLICY_DFS_DEPRIORITIZE
-};
-
-/**
- * struct csr_sta_roam_policy_params - sta roam policy params for station
- * @dfs_mode: tell is DFS channels needs to be skipped while scanning
- * @skip_unsafe_channels: tells if unsafe channels needs to be skip in scanning
- */
-struct csr_sta_roam_policy_params {
-	enum sta_roam_policy_dfs_mode dfs_mode;
-	bool skip_unsafe_channels;
-};
-
 typedef struct tagCsrConfigParam
 {
     tANI_U32 FragmentationThreshold;
@@ -1215,8 +1195,6 @@ typedef struct tagCsrConfigParam
     tANI_U32  nInitialDwellTime;      //in units of milliseconds
     bool      initial_scan_no_dfs_chnl;
 
-    tANI_U32  nActiveMinChnTimeBtc;     //in units of milliseconds
-    tANI_U32  nActiveMaxChnTimeBtc;     //in units of milliseconds
     tANI_U32  disableAggWithBtc;
 #ifdef WLAN_AP_STA_CONCURRENCY
     tANI_U32  nPassiveMinChnTimeConc;    //in units of milliseconds
@@ -1364,7 +1342,6 @@ typedef struct tagCsrConfigParam
     uint32_t edca_vi_aifs;
     uint32_t edca_bk_aifs;
     uint32_t edca_be_aifs;
-    struct csr_sta_roam_policy_params sta_roam_policy_params;
 }tCsrConfigParam;
 
 //Tush

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012-2016 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2012-2015 The Linux Foundation. All rights reserved.
  *
  * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
  *
@@ -253,7 +253,6 @@ limProcessAssocReqFrame(tpAniSirGlobal pMac, tANI_U8 *pRxPacketInfo,
     tANI_U16 assocId = 0;
     bool assoc_req_copied = false;
     tDot11fIEVHTCaps *vht_caps;
-    uint8 max_peer = 0;
 
     limGetPhyMode(pMac, &phyMode, psessionEntry);
 
@@ -278,15 +277,7 @@ limProcessAssocReqFrame(tpAniSirGlobal pMac, tANI_U8 *pRxPacketInfo,
         WDA_GET_RX_MPDU_DATA(pRxPacketInfo), framelen);
         return;
     }
-    if (psessionEntry->limMlmState == eLIM_MLM_WT_DEL_BSS_RSP_STATE) {
-        limLog(pMac, LOGE, FL("drop ASSOC REQ on sessionid: %d "
-              "role=%d from: "MAC_ADDRESS_STR" in limMlmState %d"),
-              psessionEntry->peSessionId,
-              GET_LIM_SYSTEM_ROLE(psessionEntry),
-              MAC_ADDR_ARRAY(pHdr->sa),
-              eLIM_MLM_WT_DEL_BSS_RSP_STATE);
-        return;
-    }
+
     /*
      * If a STA is already present in DPH and it
      * is initiating a Assoc re-transmit, do not
@@ -376,24 +367,6 @@ limProcessAssocReqFrame(tpAniSirGlobal pMac, tANI_U8 *pRxPacketInfo,
         return;
     }
 
-    /* check for the presence of vendor IE */
-    if ((psessionEntry->access_policy_vendor_ie) &&
-            (psessionEntry->access_policy ==
-             LIM_ACCESS_POLICY_RESPOND_IF_IE_IS_PRESENT)) {
-        if (!cfg_get_vendor_ie_ptr_from_oui(pMac,
-                    &psessionEntry->access_policy_vendor_ie[2],
-                    3, pBody + LIM_ASSOC_REQ_IE_OFFSET, framelen)) {
-            limLog(pMac, LOGE,
-                    FL("Vendor ie not present and access policy is %x, Rejected association"),
-                    psessionEntry->access_policy);
-            limSendAssocRspMgmtFrame(pMac,
-                    eSIR_MAC_UNSPEC_FAILURE_STATUS,
-                    1,
-                    pHdr->sa,
-                    subType, 0,psessionEntry);
-            return;
-        }
-    }
     // Allocate memory for the Assoc Request frame
     pAssocReq = vos_mem_malloc(sizeof(*pAssocReq));
     if (NULL == pAssocReq)
@@ -750,18 +723,10 @@ limProcessAssocReqFrame(tpAniSirGlobal pMac, tANI_U8 *pRxPacketInfo,
                 if(pAssocReq->rsn.length)
                 {
                     // Unpack the RSN IE
-                    if (dot11fUnpackIeRSN(pMac,
+                    dot11fUnpackIeRSN(pMac,
                                         &pAssocReq->rsn.info[0],
                                         pAssocReq->rsn.length,
-                                        &Dot11fIERSN) != DOT11F_PARSE_SUCCESS)
-                    {
-                        limLog(pMac, LOG1,
-                            FL("Invalid RSNIE received"));
-                        limSendAssocRspMgmtFrame(pMac,
-                            eSIR_MAC_INVALID_RSN_IE_CAPABILITIES_STATUS,
-                            1, pHdr->sa, subType, 0,psessionEntry);
-                        goto error;
-                    }
+                                        &Dot11fIERSN);
 
                     /* Check RSN version is supported or not */
                     if(SIR_MAC_OUI_VERSION_1 == Dot11fIERSN.version)
@@ -827,17 +792,10 @@ limProcessAssocReqFrame(tpAniSirGlobal pMac, tANI_U8 *pRxPacketInfo,
                 // Unpack the WPA IE
                 if(pAssocReq->wpa.length)
                 {
-                    if (dot11fUnpackIeWPA(pMac,
+                    dot11fUnpackIeWPA(pMac,
                                         &pAssocReq->wpa.info[4], //OUI is not taken care
                                         pAssocReq->wpa.length,
-                                        &Dot11fIEWPA) != DOT11F_PARSE_SUCCESS)
-                    {
-                        limLog(pMac, LOGE, FL("Invalid WPA IE"));
-                        limSendAssocRspMgmtFrame(pMac,
-                                eSIR_MAC_INVALID_INFORMATION_ELEMENT_STATUS,
-                                1, pHdr->sa, subType, 0,psessionEntry);
-                        goto error;
-                    }
+                                        &Dot11fIEWPA);
                     /* check the groupwise and pairwise cipher suites */
                     if(eSIR_SUCCESS != (status = limCheckRxWPAIeMatch(pMac, Dot11fIEWPA, psessionEntry, pAssocReq->HTCaps.present)))
                     {
@@ -889,21 +847,10 @@ limProcessAssocReqFrame(tpAniSirGlobal pMac, tANI_U8 *pRxPacketInfo,
     /// Extract pre-auth context for the STA, if any.
     pStaPreAuthContext = limSearchPreAuthList(pMac, pHdr->sa);
 
-    limLog(pMac, LOG1, FL( "max:%d ap:%d go:%d mode:%d pePersona:%d"),
-           pMac->lim.gLimAssocStaLimit, pMac->lim.glim_assoc_sta_limit_ap,
-           pMac->lim.glim_assoc_sta_limit_go, psessionEntry->pePersona,
-           psessionEntry->pePersona);
-
-    if (psessionEntry->pePersona == VOS_STA_SAP_MODE)
-        max_peer = pMac->lim.glim_assoc_sta_limit_ap;
-    else if (psessionEntry->pePersona == VOS_P2P_GO_MODE)
-        max_peer = pMac->lim.glim_assoc_sta_limit_go;
-
     if (pStaDs == NULL)
     {
         /// Requesting STA is not currently associated
-        if ((peGetCurrentSTAsCount(pMac) == pMac->lim.gLimAssocStaLimit)||
-            (max_peer != 0 && psessionEntry->gLimNumOfCurrentSTAs == max_peer))
+        if (peGetCurrentSTAsCount(pMac) == pMac->lim.gLimAssocStaLimit)
         {
             /**
              * Maximum number of STAs that AP can handle reached.

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012-2016 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2012-2017 The Linux Foundation. All rights reserved.
  *
  * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
  *
@@ -368,33 +368,6 @@ void hdd_drop_skb_list(hdd_adapter_t *adapter, struct sk_buff *skb,
 }
 
 /**
- * wlan_hdd_classify_pkt() - classify skb packet type.
- * @data: Pointer to skb
- *
- * This function classifies skb packet type.
- *
- * Return: none
- */
-void wlan_hdd_classify_pkt(struct sk_buff *skb)
-{
-	/* classify broadcast/multicast packet */
-	if (adf_nbuf_is_bcast_pkt(skb))
-		ADF_NBUF_SET_BCAST(skb);
-	else if (adf_nbuf_is_multicast_pkt(skb))
-		ADF_NBUF_SET_MCAST(skb);
-
-	/* classify eapol/arp/dhcp/wai packet */
-	if (adf_nbuf_is_eapol_pkt(skb))
-		ADF_NBUF_SET_EAPOL(skb);
-	else if (adf_nbuf_is_ipv4_arp_pkt(skb))
-		ADF_NBUF_SET_ARP(skb);
-	else if (adf_nbuf_is_dhcp_pkt(skb))
-		ADF_NBUF_SET_DHCP(skb);
-	else if (adf_nbuf_is_wai_pkt(skb))
-		ADF_NBUF_SET_WAPI(skb);
-}
-
-/**
  * hdd_get_transmit_sta_id() - function to retrieve station id to be used for
  * sending traffic towards a particular destination address. The destination
  * address can be unicast, multicast or broadcast
@@ -434,12 +407,39 @@ static void hdd_get_transmit_sta_id(hdd_adapter_t *adapter,
 		 * overwritten for UC traffic in NAN data mode
 		 */
 		if (mcbc_addr)
-			*station_id = NDP_BROADCAST_STAID;
+			*station_id = sta_ctx->broadcast_staid;
 	} else {
 		/* For the rest, traffic is directed to AP/P2P GO */
            if (eConnectionState_Associated == sta_ctx->conn_info.connState)
 		*station_id = sta_ctx->conn_info.staId[0];
 	}
+}
+
+/**
+ * wlan_hdd_classify_pkt() - classify skb packet type.
+ * @data: Pointer to skb
+ *
+ * This function classifies skb packet type.
+ *
+ * Return: none
+ */
+void wlan_hdd_classify_pkt(struct sk_buff *skb)
+{
+	/* classify broadcast/multicast packet */
+	if (adf_nbuf_is_bcast_pkt(skb))
+		ADF_NBUF_SET_BCAST(skb);
+	else if (adf_nbuf_is_multicast_pkt(skb))
+		ADF_NBUF_SET_MCAST(skb);
+
+	/* classify eapol/arp/dhcp/wai packet */
+	if (adf_nbuf_is_eapol_pkt(skb))
+		ADF_NBUF_SET_EAPOL(skb);
+	else if (adf_nbuf_is_ipv4_arp_pkt(skb))
+		ADF_NBUF_SET_ARP(skb);
+	else if (adf_nbuf_is_dhcp_pkt(skb))
+		ADF_NBUF_SET_DHCP(skb);
+	else if (adf_nbuf_is_wai_pkt(skb))
+		ADF_NBUF_SET_WAPI(skb);
 }
 
 /**============================================================================
@@ -492,12 +492,16 @@ int __hdd_hard_start_xmit(struct sk_buff *skb, struct net_device *dev)
 
    while (skb) {
        skb_next = skb->next;
+       /* memset skb control block */
+       vos_mem_zero(skb->cb, sizeof(skb->cb));
+       wlan_hdd_classify_pkt(skb);
+
        pDestMacAddress = (v_MACADDR_t*)skb->data;
        STAId = HDD_WLAN_INVALID_STA_ID;
 
        hdd_get_transmit_sta_id(pAdapter, pDestMacAddress, &STAId);
        if (STAId == HDD_WLAN_INVALID_STA_ID) {
-           hddLog(LOG1, "Invalid station id, transmit operation suspended");
+           hddLog(LOGE, "Invalid station id, transmit operation suspended");
            goto drop_pkt;
        }
 
@@ -648,7 +652,7 @@ int __hdd_hard_start_xmit(struct sk_buff *skb, struct net_device *dev)
            list_tail->next = skb;
            list_tail = list_tail->next;
        }
-       vos_mem_zero(skb->cb, sizeof(skb->cb));
+
        adf_dp_trace_log_pkt(pAdapter->sessionId, skb, ADF_TX);
        NBUF_SET_PACKET_TRACK(skb, NBUF_TX_PKT_DATA_TRACK);
        NBUF_UPDATE_TX_PKT_COUNT(skb, NBUF_TX_PKT_HDD);
@@ -657,11 +661,14 @@ int __hdd_hard_start_xmit(struct sk_buff *skb, struct net_device *dev)
        DPTRACE(adf_dp_trace(skb, ADF_DP_TRACE_HDD_TX_PACKET_PTR_RECORD,
                  (uint8_t *)&skb->data, sizeof(skb->data), ADF_TX));
        DPTRACE(adf_dp_trace(skb, ADF_DP_TRACE_HDD_TX_PACKET_RECORD,
-                 (uint8_t *)skb->data, skb->len, ADF_TX));
-       if (skb->len > ADF_DP_TRACE_RECORD_SIZE)
-           DPTRACE(adf_dp_trace(skb, ADF_DP_TRACE_HDD_TX_PACKET_RECORD,
-                      (uint8_t *)&skb->data[ADF_DP_TRACE_RECORD_SIZE],
-                      (skb->len - ADF_DP_TRACE_RECORD_SIZE), ADF_TX));
+                 (uint8_t *)skb->data, adf_nbuf_len(skb), ADF_TX));
+
+       if (adf_nbuf_len(skb) > ADF_DP_TRACE_RECORD_SIZE)
+            DPTRACE(adf_dp_trace(skb, ADF_DP_TRACE_HDD_TX_PACKET_RECORD,
+                    (uint8_t *)&skb->data[ADF_DP_TRACE_RECORD_SIZE],
+                    (adf_nbuf_len(skb) - ADF_DP_TRACE_RECORD_SIZE),
+                    ADF_TX));
+
        skb = skb_next;
        continue;
 
@@ -1248,6 +1255,16 @@ VOS_STATUS hdd_rx_packet_cbk(v_VOID_t *vosContext,
               ADF_DP_TRACE_RX_HDD_PACKET_PTR_RECORD,
               adf_nbuf_data_addr(skb),
               sizeof(adf_nbuf_data(skb)), ADF_RX));
+      DPTRACE(adf_dp_trace(skb,
+              ADF_DP_TRACE_HDD_RX_PACKET_RECORD,
+              (uint8_t *)skb->data, adf_nbuf_len(skb), ADF_RX));
+
+      if (adf_nbuf_len(skb) > ADF_DP_TRACE_RECORD_SIZE)
+          DPTRACE(adf_dp_trace(skb,
+                  ADF_DP_TRACE_HDD_RX_PACKET_RECORD,
+                  (uint8_t *)&skb->data[ADF_DP_TRACE_RECORD_SIZE],
+                  (adf_nbuf_len(skb) - ADF_DP_TRACE_RECORD_SIZE),
+                  ADF_RX));
 
 #ifdef QCA_PKT_PROTO_TRACE
       if ((pHddCtx->cfg_ini->gEnableDebugLog & VOS_PKT_TRAC_TYPE_EAPOL) ||
@@ -1304,11 +1321,12 @@ VOS_STATUS hdd_rx_packet_cbk(v_VOID_t *vosContext,
       if (skb->next) {
          rxstat = netif_rx(skb);
       } else {
-#ifdef WLAN_FEATURE_HOLD_RX_WAKELOCK
-         vos_wake_lock_timeout_acquire(&pHddCtx->rx_wake_lock,
-                                       HDD_WAKE_LOCK_DURATION,
-                                       WIFI_POWER_EVENT_WAKELOCK_HOLD_RX);
-#endif
+         if ((pHddCtx->cfg_ini->rx_wakelock_timeout) &&
+             (PACKET_BROADCAST != skb->pkt_type) &&
+             (PACKET_MULTICAST != skb->pkt_type))
+	    vos_wake_lock_timeout_acquire(&pHddCtx->rx_wake_lock,
+                        pHddCtx->cfg_ini->rx_wakelock_timeout,
+                        WIFI_POWER_EVENT_WAKELOCK_HOLD_RX);
          /*
           * This is the last packet on the chain
           * Scheduling rx sirq
@@ -1655,6 +1673,7 @@ void hdd_dhcp_pkt_trace_buf_update (struct sk_buff *skb, int is_transmission,
 	}
 }
 #endif
+
 #ifdef FEATURE_BUS_BANDWIDTH
 /**
  * hdd_rst_tcp_delack() - Reset tcp delack value to original level
@@ -1670,8 +1689,8 @@ void hdd_rst_tcp_delack(hdd_context_t *hdd_ctx)
 	enum cnss_bus_width_type  next_level = CNSS_BUS_WIDTH_LOW;
 
 	hdd_ctx->rx_high_ind_cnt = 0;
-	wlan_hdd_send_svc_nlink_msg(hdd_ctx->radio_index, WLAN_SVC_WLAN_TP_IND,
-				&next_level, sizeof(next_level));
+	wlan_hdd_send_svc_nlink_msg(WLAN_SVC_WLAN_TP_IND, &next_level,
+							sizeof(next_level));
 }
 #else
 void hdd_rst_tcp_delack(hdd_context_t *hdd_ctx)

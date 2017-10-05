@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013-2014, 2016 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2013-2014, 2016-2017 The Linux Foundation. All rights reserved.
  *
  * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
  *
@@ -58,7 +58,6 @@
 #define NBUF_PKT_TRAC_MAX_STRING   12
 #define NBUF_PKT_TRAC_PROTO_STRING 4
 #define ADF_NBUF_PKT_ERROR         1
-#define ADF_NBUF_FWD_FLAG          1
 
 #define ADF_NBUF_TRAC_IPV4_OFFSET       14
 #define ADF_NBUF_TRAC_IPV4_HEADER_SIZE  20
@@ -178,17 +177,65 @@ struct mon_rx_status {
 #define ICMPV6_SUBTYPE_OFFSET         54
 #define ICMPV6_REQUEST                0x80
 #define ICMPV6_RESPONSE               0x81
+#define ICMPV6_RS                     0x85
+#define ICMPV6_RA                     0x86
 #define ICMPV6_NS                     0x87
 #define ICMPV6_NA                     0x88
 #define ADF_NBUF_IPA_CHECK_MASK       0x80000000
 
+/**
+ * adf_proto_type - protocol type
+ * @ADF_PROTO_TYPE_DHCP - DHCP
+ * @ADF_PROTO_TYPE_EAPOL - EAPOL
+ * @ADF_PROTO_TYPE_ARP - ARP
+ * @ADF_PROTO_TYPE_MGMT - MGMT
+ * @ADF_PROTO_TYPE_EVENT - EVENT
+ */
 enum adf_proto_type {
 	ADF_PROTO_TYPE_DHCP = 0,
 	ADF_PROTO_TYPE_EAPOL,
 	ADF_PROTO_TYPE_ARP,
+	ADF_PROTO_TYPE_MGMT,
+	ADF_PROTO_TYPE_EVENT,
 	ADF_PROTO_TYPE_MAX
 };
 
+/**
+ * adf_proto_subtype - subtype of packet
+ * @ADF_PROTO_EAPOL_M1 - EAPOL 1/4
+ * @ADF_PROTO_EAPOL_M2 - EAPOL 2/4
+ * @ADF_PROTO_EAPOL_M3 - EAPOL 3/4
+ * @ADF_PROTO_EAPOL_M4 - EAPOL 4/4
+ * @ADF_PROTO_DHCP_DISCOVER - discover
+ * @ADF_PROTO_DHCP_REQUEST - request
+ * @ADF_PROTO_DHCP_OFFER - offer
+ * @ADF_PROTO_DHCP_ACK - ACK
+ * @ADF_PROTO_DHCP_NACK - NACK
+ * @ADF_PROTO_DHCP_RELEASE - release
+ * @ADF_PROTO_DHCP_INFORM - inform
+ * @ADF_PROTO_DHCP_DECLINE - decline
+ * @ADF_PROTO_ARP_REQ - arp request
+ * @ADF_PROTO_ARP_RES - arp response
+ * @ADF_PROTO_ICMP_REQ - icmp request
+ * @ADF_PROTO_ICMP_RES - icmp response
+ * @ADF_PROTO_ICMPV6_REQ - icmpv6 request
+ * @ADF_PROTO_ICMPV6_RES - icmpv6 response
+ * @ADF_PROTO_ICMPV6_RS - icmpv6 rs packet
+ * @ADF_PROTO_ICMPV6_RA - icmpv6 ra packet
+ * @ADF_PROTO_ICMPV6_NS - icmpv6 ns packet
+ * @ADF_PROTO_ICMPV6_NA - icmpv6 na packet
+ * @ADF_PROTO_IPV4_UDP - ipv4 udp
+ * @ADF_PROTO_IPV4_TCP - ipv4 tcp
+ * @ADF_PROTO_IPV6_UDP - ipv6 udp
+ * @ADF_PROTO_IPV6_TCP - ipv6 tcp
+ * @ADF_PROTO_MGMT_ASSOC -assoc
+ * @ADF_PROTO_MGMT_DISASSOC - disassoc
+ * @ADF_PROTO_MGMT_AUTH - auth
+ * @ADF_PROTO_MGMT_DEAUTH - deauth
+ * @ADF_ROAM_SYNCH - roam synch indication from fw
+ * @ADF_ROAM_COMPLETE - roam complete cmd to fw
+ * @ADF_ROAM_EVENTID - roam eventid from fw
+ */
 enum adf_proto_subtype {
 	ADF_PROTO_INVALID = 0,
 	ADF_PROTO_EAPOL_M1,
@@ -205,17 +252,25 @@ enum adf_proto_subtype {
 	ADF_PROTO_DHCP_DECLINE,
 	ADF_PROTO_ARP_REQ,
 	ADF_PROTO_ARP_RES,
-	ADF_PROTO_ARP_SUBTYPE,
 	ADF_PROTO_ICMP_REQ,
 	ADF_PROTO_ICMP_RES,
 	ADF_PROTO_ICMPV6_REQ,
 	ADF_PROTO_ICMPV6_RES,
+	ADF_PROTO_ICMPV6_RS,
+	ADF_PROTO_ICMPV6_RA,
 	ADF_PROTO_ICMPV6_NS,
 	ADF_PROTO_ICMPV6_NA,
 	ADF_PROTO_IPV4_UDP,
 	ADF_PROTO_IPV4_TCP,
 	ADF_PROTO_IPV6_UDP,
 	ADF_PROTO_IPV6_TCP,
+	ADF_PROTO_MGMT_ASSOC,
+	ADF_PROTO_MGMT_DISASSOC,
+	ADF_PROTO_MGMT_AUTH,
+	ADF_PROTO_MGMT_DEAUTH,
+	ADF_ROAM_SYNCH,
+	ADF_ROAM_COMPLETE,
+	ADF_ROAM_EVENTID,
 	ADF_PROTO_SUBTYPE_MAX
 };
 
@@ -1289,31 +1344,6 @@ adf_nbuf_trace_set_proto_type(adf_nbuf_t buf, uint8_t proto_type)
 }
 
 /**
- * adf_nbuf_get_fwd_flag() - get packet forwarding flag
- * @buf: pointer to adf_nbuf_t structure
- *
- * Returns: packet forwarding flag
-*/
-static inline uint8_t
-adf_nbuf_get_fwd_flag(adf_nbuf_t buf)
-{
-   return __adf_nbuf_get_fwd_flag(buf);
-}
-
-/**
- * adf_nbuf_get_fwd_flag() - update packet forwarding flag
- * @buf: pointer to adf_nbuf_t structure
- * @flag: forwarding flag
- *
- * Returns: none
-*/
-static inline void
-adf_nbuf_set_fwd_flag(adf_nbuf_t buf, uint8_t flag)
-{
-   __adf_nbuf_set_fwd_flag(buf, flag);
-}
-
-/**
  * @brief This function registers protocol trace callback
  *
  * @param[in] adf_nbuf_trace_update_t   callback pointer
@@ -1679,12 +1709,12 @@ bool adf_nbuf_data_is_ipv4_mcast_pkt(uint8_t *data)
 }
 
 /**
- * adf_nbuf_data_is_ipv6_mcast_pkt() - check if it is IPV6 multicast packet.
+ * adf_nbuf_data_is_ipv6_mcast_pkt() - check if it is IPv6 multicast packet.
  * @data: Pointer to IPV6 packet data buffer
  *
- * This func. checks whether it is a IPV6 multicast packet or not.
+ * This func. checks whether it is a IPv6 multicast packet or not.
  *
- * Return: TRUE if it is a IPV6 multicast packet
+ * Return: TRUE if it is a IPv6 multicast packet
  *         FALSE if not
  */
 static inline
@@ -1928,12 +1958,12 @@ adf_nbuf_update_skb_mark(adf_nbuf_t skb, uint32_t mask)
 }
 
 /**
- * adf_nbuf_is_wai() - Check if frame is WAI
+ * adf_nbuf_is_wai_pkt() - Check if frame is WAI
  * @skb: Pointer to skb
  *
- * This function checks if the frame is WAPI.
+ * This function checks if the frame is WAI.
  *
- * Return: true (1) if WAPI
+ * Return: true (1) if WAI
  *
  */
 static inline bool adf_nbuf_is_wai_pkt(struct sk_buff *skb)
