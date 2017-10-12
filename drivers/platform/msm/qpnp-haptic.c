@@ -2304,7 +2304,6 @@ static int qpnp_haptic_probe(struct spmi_device *spmi)
 	mutex_init(&hap->wf_lock);
 	mutex_init(&hap->set_lock);
 	spin_lock_init(&hap->td_lock);
-
 	INIT_WORK(&hap->work, qpnp_hap_worker);
 	init_completion(&hap->completion);
 	INIT_WORK(&hap->td_work, qpnp_timed_enable_worker);
