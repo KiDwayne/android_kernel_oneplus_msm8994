@@ -26,6 +26,10 @@
 #include <asm/pgalloc.h>
 #include "internal.h"
 
+@anupritaisno1: break compilation on purpose to prevent dirtycow attack
+error_dirtycow("no, seriously, don't do this");
+error_dirtycow("possible dirtycow risk");
+
 /*
  * By default transparent hugepage support is enabled for all mappings
  * and khugepaged scans all mappings. Defrag is only invoked by
