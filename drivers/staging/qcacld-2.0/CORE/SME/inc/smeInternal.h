@@ -179,12 +179,6 @@ typedef struct tagSmeStruct
     void(*pLinkLayerStatsIndCallback)(void *callbackContext,
                                         int indType, void *pRsp);
 #endif /* WLAN_FEATURE_LINK_LAYER_STATS */
-
-#ifdef WLAN_POWER_DEBUGFS
-    void *power_debug_stats_context;
-    void(*power_stats_resp_callback)(struct power_stats_response *rsp,
-				    void *callback_context);
-#endif
 #ifdef FEATURE_WLAN_AUTO_SHUTDOWN
     void (*pAutoShutdownNotificationCb) (void);
 #endif
@@ -228,9 +222,6 @@ typedef struct tagSmeStruct
     ocb_callback dcc_update_ndl_callback;
     void *dcc_stats_event_context;
     ocb_callback dcc_stats_event_callback;
-#ifdef WLAN_FEATURE_MEMDUMP
-    void (*fw_dump_callback)(void *context, struct fw_dump_rsp *rsp);
-#endif
     void (*set_thermal_level_cb)(void *hdd_context, uint8_t level);
 
     void (*rssi_threshold_breached_cb)(void *, struct rssi_breach_event *);

@@ -131,9 +131,8 @@ static VOS_STATUS lim_handle_ndp_indication_event(tpAniSirGlobal mac_ctx,
 	VOS_STATUS status = VOS_STATUS_SUCCESS;
 
 	limLog(mac_ctx, LOG1,
-		FL("role: %d, vdev: %d, csid: %d, peer_mac_addr "
-			MAC_ADDRESS_STR),
-		ndp_ind->role, ndp_ind->vdev_id, ndp_ind->ncs_sk_type,
+		FL("role: %d, vdev: %d, peer_mac_addr "MAC_ADDRESS_STR),
+		ndp_ind->role, ndp_ind->vdev_id,
 		MAC_ADDR_ARRAY(ndp_ind->peer_mac_addr.bytes));
 
 	if ((ndp_ind->role == NDP_ROLE_INITIATOR) ||
@@ -198,8 +197,7 @@ static VOS_STATUS lim_ndp_responder_rsp_handler(tpAniSirGlobal mac_ctx,
 		goto responder_rsp;
 	}
 
-	if (VOS_STATUS_SUCCESS == rsp_ind->status &&
-	    rsp_ind->create_peer == true) {
+	if (VOS_STATUS_SUCCESS == rsp_ind->status) {
 		ret_val = lim_add_ndi_peer(mac_ctx, rsp_ind->vdev_id,
 				rsp_ind->peer_mac_addr);
 		if (VOS_STATUS_SUCCESS != ret_val) {
@@ -716,11 +714,11 @@ void lim_process_ndi_mlm_add_bss_rsp(tpAniSirGlobal mac_ctx, tpSirMsgQ lim_msgq,
 	tLimMlmStartCnf mlm_start_cnf;
 	tpAddBssParams add_bss_params = (tpAddBssParams) lim_msgq->bodyptr;
 
-	limLog(mac_ctx, LOG1, FL("Status %d"), add_bss_params->status);
 	if (NULL == add_bss_params) {
 		limLog(mac_ctx, LOGE, FL("Invalid body pointer in message"));
 		goto end;
 	}
+	limLog(mac_ctx, LOG1, FL("Status %d"), add_bss_params->status);
 	if (eHAL_STATUS_SUCCESS == add_bss_params->status) {
 		limLog(mac_ctx, LOG1,
 		       FL("WDA_ADD_BSS_RSP returned eHAL_STATUS_SUCCESS"));
@@ -731,7 +729,6 @@ void lim_process_ndi_mlm_add_bss_rsp(tpAniSirGlobal mac_ctx, tpSirMsgQ lim_msgq,
 		session_entry->bssIdx = (uint8_t) add_bss_params->bssIdx;
 		session_entry->limSystemRole = eLIM_NDI_ROLE;
 		session_entry->statypeForBss = STA_ENTRY_SELF;
-		session_entry->staId = add_bss_params->staContext.staIdx;
 		/* Apply previously set configuration at HW */
 		limApplyConfiguration(mac_ctx, session_entry);
 		mlm_start_cnf.resultCode = eSIR_SME_SUCCESS;

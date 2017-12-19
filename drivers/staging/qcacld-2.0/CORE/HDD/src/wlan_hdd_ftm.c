@@ -741,8 +741,10 @@ err_vos_status_failure:
 static int hdd_ftm_service_registration(hdd_context_t *pHddCtx)
 {
     hdd_adapter_t *pAdapter;
-    pAdapter = hdd_open_adapter( pHddCtx, WLAN_HDD_FTM, "wlan%d",
-                wlan_hdd_get_intf_addr(pHddCtx), FALSE);
+    pAdapter = hdd_open_adapter(pHddCtx, WLAN_HDD_FTM, "wlan%d",
+                                wlan_hdd_get_intf_addr(pHddCtx),
+                                NET_NAME_UNKNOWN,
+                                FALSE);
     if( NULL == pAdapter )
     {
        hddLog(VOS_TRACE_LEVEL_ERROR,"%s: hdd_open_adapter failed", __func__);
@@ -930,7 +932,7 @@ err_status_failure:
 }
 
 #if  defined(QCA_WIFI_FTM)
-int hdd_ftm_start(hdd_context_t *pHddCtx)
+VOS_STATUS hdd_ftm_start(hdd_context_t *pHddCtx)
 {
     return wlan_hdd_ftm_start(pHddCtx);
 }
@@ -953,7 +955,8 @@ static int wlan_hdd_qcmbr_command(hdd_adapter_t *pAdapter, qcmbr_data_t *pqcmbr_
     switch (pqcmbr_data->cmd) {
         case ATH_XIOCTL_UNIFIED_UTF_CMD: {
             pqcmbr_data->copy_to_user = 0;
-            if (pqcmbr_data->length) {
+            if (pqcmbr_data->length &&
+                pqcmbr_data->length <= sizeof(pqcmbr_data->buf)) {
                 if (wlan_hdd_ftm_testmode_cmd(pqcmbr_data->buf,
                                               pqcmbr_data->length,
                                               TRUE)
@@ -1072,8 +1075,10 @@ static void WLANQCMBR_McProcessMsg(v_VOID_t *message)
     u_int32_t data_len;
 
     data_len = *((u_int32_t *)message) + sizeof(u_int32_t);
-    qcmbr_buf = kzalloc(sizeof(qcmbr_queue_t), GFP_KERNEL);
+    if (data_len > MAX_UTF_LENGTH + 4)
+        return;
 
+    qcmbr_buf = kzalloc(sizeof(qcmbr_queue_t), GFP_KERNEL);
     if (qcmbr_buf != NULL) {
         memcpy(qcmbr_buf->utf_buf, message, data_len);
         spin_lock_bh(&qcmbr_queue_lock);

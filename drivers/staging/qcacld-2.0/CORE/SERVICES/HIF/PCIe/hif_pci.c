@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013-2017 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2013-2016 The Linux Foundation. All rights reserved.
  *
  * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
  *
@@ -96,9 +96,6 @@ unsigned int pcie_access_log_seqnum = 0;
 HIF_ACCESS_LOG pcie_access_log[PCIE_ACCESS_LOG_NUM];
 static void HIFTargetDumpAccessLog(void);
 #endif
-
-/* Forward references */
-static int hif_post_recv_buffers_for_pipe(struct HIF_CE_pipe_info *pipe_info);
 
 /*
  * Host software's Copy Engine configuration.
@@ -1590,6 +1587,7 @@ hif_post_recv_buffers_for_pipe(struct HIF_CE_pipe_info *pipe_info)
                 ("%s CE_recv_buf_enqueue error [%d] needed %d\n",
                 __func__, pipe_info->pipe_num,
                 atomic_read(&pipe_info->recv_bufs_needed)));
+            adf_nbuf_unmap_single(scn->adf_dev, nbuf, ADF_OS_DMA_FROM_DEVICE);
             atomic_inc(&pipe_info->recv_bufs_needed);
             adf_nbuf_free(nbuf);
             adf_os_spin_lock_bh(&pipe_info->recv_bufs_needed_lock);
@@ -1812,8 +1810,9 @@ hif_send_buffer_cleanup_on_pipe(struct HIF_CE_pipe_info *pipe_info)
                 return;
             }
             /* Indicate the completion to higer layer to free the buffer */
-            hif_state->msg_callbacks_current.txCompletionHandler(
-                hif_state->msg_callbacks_current.Context, netbuf, id);
+            if (hif_state->msg_callbacks_current.txCompletionHandler)
+                hif_state->msg_callbacks_current.txCompletionHandler(
+                    hif_state->msg_callbacks_current.Context, netbuf, id);
         }
     }
 }
@@ -2354,7 +2353,6 @@ HIF_sleep_entry(void *arg)
 	A_target_id_t pci_addr = TARGID_TO_PCI_ADDR(hif_state->targid);
 	struct hif_pci_softc *sc = hif_state->sc;
 	u_int32_t idle_ms;
-	unsigned long flags;
 
 	if (vos_is_unload_in_progress())
 		return;
@@ -2362,7 +2360,7 @@ HIF_sleep_entry(void *arg)
 	if (sc->recovery)
 		return;
 
-	spin_lock_irqsave(&hif_state->keep_awake_lock, flags);
+	adf_os_spin_lock_irqsave(&hif_state->keep_awake_lock);
 	if (hif_state->verified_awake == FALSE) {
 		idle_ms = adf_os_ticks_to_msecs(adf_os_ticks()
 					- hif_state->sleep_ticks);
@@ -2382,7 +2380,7 @@ HIF_sleep_entry(void *arg)
 		adf_os_timer_start(&hif_state->sleep_timer,
 			HIF_SLEEP_INACTIVITY_TIMER_PERIOD_MS);
 	}
-	spin_unlock_irqrestore(&hif_state->keep_awake_lock, flags);
+	adf_os_spin_unlock_irqrestore(&hif_state->keep_awake_lock);
 }
 
 void
@@ -2391,9 +2389,8 @@ HIFCancelDeferredTargetSleep(HIF_DEVICE *hif_device)
 	struct HIF_CE_state *hif_state = (struct HIF_CE_state *)hif_device;
 	A_target_id_t pci_addr = TARGID_TO_PCI_ADDR(hif_state->targid);
 	struct hif_pci_softc *sc = hif_state->sc;
-	unsigned long flags;
 
-	spin_lock_irqsave(&hif_state->keep_awake_lock, flags);
+	adf_os_spin_lock_irqsave(&hif_state->keep_awake_lock);
 	/*
 	 * If the deferred sleep timer is running cancel it
 	 * and put the soc into sleep.
@@ -2406,7 +2403,7 @@ HIFCancelDeferredTargetSleep(HIF_DEVICE *hif_device)
 		}
 		hif_state->fake_sleep = FALSE;
 	}
-	spin_unlock_irqrestore(&hif_state->keep_awake_lock, flags);
+	adf_os_spin_unlock_irqrestore(&hif_state->keep_awake_lock);
 }
 
 /*
@@ -2448,9 +2445,9 @@ HIF_PCIDeviceProbed(hif_handle_t hif_hdl)
     sc->hif_device = (HIF_DEVICE *)hif_state;
     hif_state->sc = sc;
 
-    spin_lock_init(&hif_state->keep_awake_lock);
+    adf_os_spinlock_init(&hif_state->keep_awake_lock);
 
-    spin_lock_init(&hif_state->suspend_lock);
+    adf_os_spinlock_init(&hif_state->suspend_lock);
 
     adf_os_atomic_init(&hif_state->hif_thread_idle);
     adf_os_atomic_inc(&hif_state->hif_thread_idle);
@@ -2762,7 +2759,6 @@ HIFTargetSleepStateAdjust(A_target_id_t targid,
     static int max_delay;
     static int debug = 0;
     struct hif_pci_softc *sc = hif_state->sc;
-    unsigned long flags;
 
 
     if (sc->recovery)
@@ -2784,7 +2780,7 @@ HIFTargetSleepStateAdjust(A_target_id_t targid,
     }
 
     if (sleep_ok) {
-        spin_lock_irqsave(&hif_state->keep_awake_lock, flags);
+        adf_os_spin_lock_irqsave(&hif_state->keep_awake_lock);
         hif_state->keep_awake_count--;
         if (hif_state->keep_awake_count == 0) {
             /* Allow sleep */
@@ -2800,9 +2796,9 @@ HIFTargetSleepStateAdjust(A_target_id_t targid,
             adf_os_timer_start(&hif_state->sleep_timer,
                 HIF_SLEEP_INACTIVITY_TIMER_PERIOD_MS);
         }
-        spin_unlock_irqrestore(&hif_state->keep_awake_lock, flags);
+        adf_os_spin_unlock_irqrestore(&hif_state->keep_awake_lock);
     } else {
-        spin_lock_irqsave(&hif_state->keep_awake_lock, flags);
+        adf_os_spin_lock_irqsave(&hif_state->keep_awake_lock);
 
         if (hif_state->fake_sleep) {
             hif_state->verified_awake = TRUE;
@@ -2814,7 +2810,7 @@ HIFTargetSleepStateAdjust(A_target_id_t targid,
             }
         }
         hif_state->keep_awake_count++;
-        spin_unlock_irqrestore(&hif_state->keep_awake_lock, flags);
+        adf_os_spin_unlock_irqrestore(&hif_state->keep_awake_lock);
 
         if (wait_for_it && !hif_state->verified_awake) {
 #define PCIE_WAKE_TIMEOUT 8000 /* 8Ms */

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012-2017 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2012-2016 The Linux Foundation. All rights reserved.
  *
  * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
  *
@@ -89,7 +89,6 @@ typedef tANI_U8 tSirVersionString[SIR_VERSION_STRING_LEN];
 #define MAXNUM_PERIODIC_TX_PTRNS 6
 
 #define WIFI_SCANNING_MAC_OUI_LENGTH 3
-#define PROBE_REQ_BITMAP_LEN 8
 
 #define MAX_LEN_UDP_RESP_OFFLOAD 128
 
@@ -693,7 +692,7 @@ typedef struct sSirSmeStartBssReq
     tANI_BOOLEAN            obssEnabled;
     uint8_t                 sap_dot11mc;
     bool                    vendor_vht_for_24ghz_sap;
-
+    uint16_t                beacon_tx_rate;
 } tSirSmeStartBssReq, *tpSirSmeStartBssReq;
 
 #define GET_IE_LEN_IN_BSS(lenInBss) ( lenInBss + sizeof(lenInBss) - \
@@ -706,7 +705,7 @@ typedef struct sSirBssDescription
     //offset of the ieFields from bssId.
     tANI_U16             length;
     tSirMacAddr          bssId;
-    v_TIME_t             scansystimensec;
+    v_TIME_t             scanSysTimeMsec;
     tANI_U32             timeStamp[2];
     tANI_U16             beaconInterval;
     tANI_U16             capabilityInfo;
@@ -720,7 +719,7 @@ typedef struct sSirBssDescription
     //used only in scan case.
     tANI_U8              channelIdSelf;
     tANI_U8              sSirBssDescriptionRsvd[3];
-    tANI_TIMESTAMP nReceivedTime;     //base on a tick count. It is a time stamp, not a relative time.
+    v_TIME_t nReceivedTime;     //base on a tick count. It is a time stamp, not a relative time.
 #if defined WLAN_FEATURE_VOWIFI
     tANI_U32       parentTSF;
     tANI_U32       startTSF[2];
@@ -933,15 +932,6 @@ typedef struct sSirSmeScanReq
     tANI_U16             uIEFieldLen;
     tANI_U16             uIEFieldOffset;
 
-    uint32_t enable_scan_randomization;
-    uint8_t mac_addr[VOS_MAC_ADDR_SIZE];
-    uint8_t mac_addr_mask[VOS_MAC_ADDR_SIZE];
-    bool ie_whitelist;
-    uint32_t probe_req_ie_bitmap[PROBE_REQ_BITMAP_LEN];
-    uint32_t num_vendor_oui;
-    uint32_t oui_field_len;
-    uint32_t oui_field_offset;
-
     //channelList MUST be the last field of this structure
     tSirChannelList channelList;
     /*-----------------------------
@@ -960,10 +950,7 @@ typedef struct sSirSmeScanReq
       ----------------------------- <--+
       ... variable size uIEFiled
       up to uIEFieldLen (can be 0)
-      -----------------------------
-      ... variable size upto num_vendor_oui
-      struct vendor_oui voui;
-    */
+      -----------------------------*/
 } tSirSmeScanReq, *tpSirSmeScanReq;
 
 typedef struct sSirSmeScanAbortReq
@@ -996,7 +983,7 @@ typedef struct sSirOemDataReq
     tANI_U16              messageType; /* eWNI_SME_OEM_DATA_REQ */
     tANI_U16              messageLen;
     tSirMacAddr           selfMacAddr;
-    uint32_t               data_len;
+    uint32_t              data_len;
     uint8_t               *data;
 } tSirOemDataReq, *tpSirOemDataReq;
 
@@ -1732,6 +1719,15 @@ typedef struct sSirSmeDeauthCnf
     tSirMacAddr         bssId;             // AP BSSID
     tSirMacAddr        peerMacAddr;
 } tSirSmeDeauthCnf, *tpSirSmeDeauthCnf;
+
+/* Definition for disconnect done indication */
+typedef struct sSirSmeDisConDoneInd {
+   tANI_U16           messageType;
+   tANI_U16           length;
+   tANI_U8            sessionId;
+   tSirResultCodes    reasonCode;
+   tSirMacAddr        peerMacAddr;
+} tSirSmeDisConDoneInd, *tpSirSmeDisConDoneInd;
 
 /// Definition for stop BSS request message
 typedef struct sSirSmeStopBssReq
@@ -3719,18 +3715,6 @@ typedef struct
 } tSirNetworkType;
 
 /**
- * struct connected_pno_band_rssi_pref - BSS preference based on band
- * and RSSI
- * @band: band preference
- * @rssi_pref: RSSI preference
- */
-struct connected_pno_band_rssi_pref
-{
-	tSirRFBand band;
-	int8_t rssi;
-};
-
-/**
  * struct sSirPNOScanReq - PNO Scan request structure
  * @enable: flag to enable or disable
  * @modePNO: PNO Mode
@@ -3749,10 +3733,6 @@ struct connected_pno_band_rssi_pref
  * @p24GProbeTemplate: 2.4G probe template
  * @us5GProbeTemplateLen: 5G probe template length
  * @p5GProbeTemplate: 5G probe template
- * @relative_rssi_set: Flag to check whether realtive_rssi is set or not
- * @relative_rssi: Relative rssi threshold, used for connected pno
- * @band_rssi_pref: Band and RSSI preference that can be given to one BSS
- * over the other BSS
  */
 typedef struct sSirPNOScanReq {
 	uint8_t         enable;
@@ -3774,19 +3754,6 @@ typedef struct sSirPNOScanReq {
 	uint8_t         p24GProbeTemplate[SIR_PNO_MAX_PB_REQ_SIZE];
 	uint16_t        us5GProbeTemplateLen;
 	uint8_t         p5GProbeTemplate[SIR_PNO_MAX_PB_REQ_SIZE];
-
-	bool            relative_rssi_set;
-	int8_t          relative_rssi;
-	struct          connected_pno_band_rssi_pref band_rssi_pref;
-
-	/* mac address randomization attributes */
-	uint32_t enable_pno_scan_randomization;
-	uint8_t mac_addr[VOS_MAC_ADDR_SIZE];
-	uint8_t mac_addr_mask[VOS_MAC_ADDR_SIZE];
-	bool ie_whitelist;
-	uint32_t probe_req_ie_bitmap[PROBE_REQ_BITMAP_LEN];
-	uint32_t num_vendor_oui;
-	/* followed by one or more struct vendor_oui */
 } tSirPNOScanReq, *tpSirPNOScanReq;
 
 typedef struct sSirSetRSSIFilterReq
@@ -3808,7 +3775,7 @@ typedef struct sSirSetRSSIFilterReq
  * SIR_MAC_ACTION_DLP              2      0
  * SIR_MAC_ACTION_BLKACK           3      0
  * SIR_MAC_ACTION_PUBLIC_USAGE     4      1
- * SIR_MAC_ACTION_RRM              5      0
+ * SIR_MAC_ACTION_RRM              5      1
  * SIR_MAC_ACTION_FAST_BSS_TRNST   6      0
  * SIR_MAC_ACTION_HT               7      0
  * SIR_MAC_ACTION_SA_QUERY         8      1
@@ -3828,6 +3795,7 @@ typedef struct sSirSetRSSIFilterReq
 		((1 << SIR_MAC_ACTION_SPECTRUM_MGMT) | \
 		 (1 << SIR_MAC_ACTION_QOS_MGMT) | \
 		 (1 << SIR_MAC_ACTION_PUBLIC_USAGE) | \
+		 (1 << SIR_MAC_ACTION_RRM) | \
 		 (1 << SIR_MAC_ACTION_SA_QUERY) | \
 		 (1 << SIR_MAC_ACTION_WNM) | \
 		 (1 << SIR_MAC_ACTION_WME) | \
@@ -3836,6 +3804,7 @@ typedef struct sSirSetRSSIFilterReq
 #define ALLOWED_ACTION_FRAMES_BITMAP0_SAP \
 		((ALLOWED_ACTION_FRAMES_BITMAP0_STA) | \
 		 (1 << SIR_MAC_ACTION_HT))
+
 #define ALLOWED_ACTION_FRAMES_BITMAP1	0x0
 #define ALLOWED_ACTION_FRAMES_BITMAP2	0x0
 #define ALLOWED_ACTION_FRAMES_BITMAP3	0x0
@@ -3950,6 +3919,8 @@ struct roam_ext_params {
 
 typedef struct sSirRoamOffloadScanReq
 {
+  uint16_t    message_type;
+  uint16_t    length;
   eAniBoolean RoamScanOffloadEnabled;
   eAniBoolean MAWCEnabled;
   tANI_S8     LookupThreshold;
@@ -4021,14 +3992,6 @@ typedef struct sSirRoamOffloadScanRsp
   tANI_U32 reason;
 } tSirRoamOffloadScanRsp, *tpSirRoamOffloadScanRsp;
 
-struct sir_sme_roam_restart_req
-{
-	tANI_U16 message_type;
-	tANI_U16 length;
-	tANI_U8  sme_session_id;
-	tANI_U8  command;
-	tANI_U8  reason;
-};
 #endif //WLAN_FEATURE_ROAM_SCAN_OFFLOAD
 
 #define SIR_NOCHANGE_POWER_VALUE  0xFFFFFFFF
@@ -4084,7 +4047,7 @@ typedef struct sSirTxPerTrackingParam
 #define    SIR_IPV4_ADDR_LEN                 4
 #define    SIR_MAC_ADDR_LEN                  6
 #define    SIR_MAX_FILTER_TEST_DATA_LEN       8
-#define    SIR_MAX_NUM_MULTICAST_ADDRESS    240
+#define    SIR_MAX_NUM_MULTICAST_ADDRESS    16
 #define    SIR_MAX_NUM_FILTERS               20
 #define    SIR_MAX_NUM_TESTS_PER_FILTER      10
 
@@ -4448,6 +4411,7 @@ typedef struct sSirActiveModeSetBcnFilterReq
    tANI_U16               messageType;
    tANI_U16               length;
    tANI_U8                seesionId;
+   tSirMacAddr            bssid;
 } tSirSetActiveModeSetBncFilterReq, *tpSirSetActiveModeSetBncFilterReq;
 
 //Reset AP Caps Changed
@@ -4511,16 +4475,7 @@ typedef struct sSirScanOffloadReq {
     tSirP2pScanType p2pScanType;
     tANI_U16 uIEFieldLen;
     tANI_U16 uIEFieldOffset;
-
-    uint32_t enable_scan_randomization;
-    uint8_t mac_addr[VOS_MAC_ADDR_SIZE];
-    uint8_t mac_addr_mask[VOS_MAC_ADDR_SIZE];
-    bool ie_whitelist;
-    uint32_t probe_req_ie_bitmap[PROBE_REQ_BITMAP_LEN];
-    uint32_t num_vendor_oui;
-    uint32_t oui_field_len;
-    uint32_t oui_field_offset;
-
+    uint32_t burst_scan_duration;
     tSirChannelList channelList;
     /*-----------------------------
       sSirScanOffloadReq....
@@ -4538,10 +4493,7 @@ typedef struct sSirScanOffloadReq {
       ----------------------------- <--+
       ... variable size uIEField
       up to uIEFieldLen (can be 0)
-      -----------------------------
-      ... variable size upto num_vendor_oui
-      struct vendor_oui voui;
-      ------------------------*/
+      -----------------------------*/
 } tSirScanOffloadReq, *tpSirScanOffloadReq;
 
 /**
@@ -5270,7 +5222,6 @@ struct ext_scan_capabilities_response
 	uint32_t    max_number_epno_networks;
 	uint32_t    max_number_epno_networks_by_ssid;
 	uint32_t    max_number_of_white_listed_ssid;
-	uint32_t    max_number_of_black_listed_bssid;
 };
 
 
@@ -5402,7 +5353,6 @@ struct extscan_cached_scan_results
  * @moreData: 0 - for last fragment
  *             1 - still more fragment(s) coming
  * @ap: bssid info
- * @bss_description: BSS description
  *
  * Reported when each probe response is received, if reportEvents
  * enabled in tSirWifiScanCmdReqParams
@@ -5412,7 +5362,6 @@ typedef struct
 	uint32_t            requestId;
 	bool                moreData;
 	tSirWifiScanResult  ap;
-	tSirBssDescription bss_description;
 } tSirWifiFullScanResultEvent, *tpSirWifiFullScanResultEvent;
 
 /**
@@ -5771,47 +5720,9 @@ typedef struct
   tANI_U8   stopReq;
 } tSirLLStatsClearReq, *tpSirLLStatsClearReq;
 
-/**
- * struct vendor_oui - probe request ie vendor oui information
- * @oui_type: type of the vendor oui (3 valid octets)
- * @oui_subtype: subtype of the vendor oui (1 valid octet)
- */
-struct vendor_oui {
-	uint32_t oui_type;
-	uint32_t oui_subtype;
-};
-
-#ifdef WLAN_POWER_DEBUGFS
-/**
- * struct power_stats_response - Power stats response
- * @cumulative_sleep_time_ms: cumulative sleep time in ms
- * @cumulative_total_on_time_ms: total awake time in ms
- * @deep_sleep_enter_counter: deep sleep enter counter
- * @last_deep_sleep_enter_tstamp_ms: last deep sleep enter timestamp
- * @debug_register_fmt: debug registers format
- * @num_debug_register: number of debug registers
- * @debug_registers: Pointer to the debug registers buffer
- */
-struct power_stats_response {
-	uint32_t cumulative_sleep_time_ms;
-	uint32_t cumulative_total_on_time_ms;
-	uint32_t deep_sleep_enter_counter;
-	uint32_t last_deep_sleep_enter_tstamp_ms;
-	uint32_t debug_register_fmt;
-	uint32_t num_debug_register;
-	uint32_t *debug_registers;
-};
-#endif
-
 typedef struct
 {
     tANI_U8 oui[WIFI_SCANNING_MAC_OUI_LENGTH];
-    uint32_t vdev_id;
-    bool enb_probe_req_sno_randomization;
-    bool ie_whitelist;
-    uint32_t probe_req_ie_bitmap[PROBE_REQ_BITMAP_LEN];
-    uint32_t num_vendor_oui;
-    /* Followed by 0 or more struct vendor_oui */
 } tSirScanMacOui, *tpSirScanMacOui;
 
 enum {
@@ -6631,61 +6542,6 @@ struct sir_guard_time_request {
 /* Max number of rates allowed in Supported Rates IE */
 #define MAX_NUM_SUPPORTED_RATES (8)
 
-#define MAX_NUM_FW_SEGMENTS 4
-
-/**
- * struct fw_dump_seg_req - individual segment details
- * @seg_id - segment id.
- * @seg_start_addr_lo - lower address of the segment.
- * @seg_start_addr_hi - higher address of the segment.
- * @seg_length - length of the segment.
- * @dst_addr_lo - lower address of the destination buffer.
- * @dst_addr_hi - higher address of the destination buffer.
- *
- * This structure carries the information to firmware about the
- * individual segments. This structure is part of firmware memory
- * dump request.
- */
-struct fw_dump_seg_req
-{
-	uint8_t seg_id;
-	uint32_t seg_start_addr_lo;
-	uint32_t seg_start_addr_hi;
-	uint32_t seg_length;
-	uint32_t dst_addr_lo;
-	uint32_t dst_addr_hi;
-};
-
-/**
- * struct fw_dump_req - firmware memory dump request details.
- * @request_id - request id.
- * @num_seg - requested number of segments.
- * @fw_dump_seg_req - individual segment information.
- *
- * This structure carries information about the firmware
- * memory dump request.
- */
-struct fw_dump_req
-{
-	uint32_t request_id;
-	uint32_t num_seg;
-	struct fw_dump_seg_req segment[MAX_NUM_FW_SEGMENTS];
-};
-
-/**
- * struct fw_dump_rsp - firmware dump response details.
- * @request_id - request id.
- * @dump_complete - copy completion status.
- *
- * This structure is used to store the firmware dump copy complete
- * response from the firmware.
- */
-struct fw_dump_rsp
-{
-	uint32_t request_id;
-	uint32_t dump_complete;
-};
-
 /**
  * struct vdev_ie_info - IE info
  * @vdev_i - vdev for which the IE is being sent
@@ -6918,11 +6774,6 @@ struct sir_bpf_get_offload {
  * @wow_ipv6_mcast_na_stats: ipv6 multicast na stats
  * @wow_icmpv4_count: ipv4 icmp packet count
  * @wow_icmpv6_count: ipv6 icmp packet count
- * @wow_rssi_breach_wake_up_count: rssi breach wakeup count
- * @wow_low_rssi_wake_up_count: low rssi wakeup count
- * @wow_gscan_wake_up_count: gscan wakeup count
- * @wow_pno_complete_wake_up_count: pno complete wakeup count
- * @wow_pno_match_wake_up_count: pno match wakeup count
  */
 struct sir_wake_lock_stats {
 	uint32_t wow_ucast_wake_up_count;
@@ -6934,11 +6785,6 @@ struct sir_wake_lock_stats {
 	uint32_t wow_ipv6_mcast_na_stats;
 	uint32_t wow_icmpv4_count;
 	uint32_t wow_icmpv6_count;
-	uint32_t wow_rssi_breach_wake_up_count;
-	uint32_t wow_low_rssi_wake_up_count;
-	uint32_t wow_gscan_wake_up_count;
-	uint32_t wow_pno_complete_wake_up_count;
-	uint32_t wow_pno_match_wake_up_count;
 };
 
 /**
@@ -7270,28 +7116,6 @@ struct ndp_app_info {
 };
 
 /**
- * struct ndp_scid - structure to hold sceurity context identifier
- * @scid_len: length of scid
- * @scid: scid
- *
- */
-struct ndp_scid {
-	uint32_t scid_len;
-	uint8_t *scid;
-};
-
-/**
- * struct ndp_pmk - structure to hold pairwise master key
- * @pmk_len: length of pairwise master key
- * @pmk: buffer containing pairwise master key
- *
- */
-struct ndp_pmk {
-	uint32_t pmk_len;
-	uint8_t *pmk;
-};
-
-/**
  * struct ndi_create_req - ndi create request params
  * @transaction_id: unique identifier
  * @iface_name: interface name
@@ -7311,7 +7135,6 @@ struct ndp_pmk {
  struct ndi_create_rsp {
 	uint32_t status;
 	uint32_t reason;
-	uint8_t sta_id;
 };
 
 /**
@@ -7330,28 +7153,22 @@ struct ndp_pmk {
  * @transaction_id: unique identifier
  * @vdev_id: session id of the interface over which ndp is being created
  * @channel: suggested channel for ndp creation
- * @channel_cfg: channel config, 0=no channel, 1=optional, 2=mandatory
  * @service_instance_id: Service identifier
  * @peer_discovery_mac_addr: Peer's discovery mac address
  * @self_ndi_mac_addr: self NDI mac address
  * @ndp_config: ndp configuration params
  * @ndp_info: ndp application info
- * @ncs_sk_type: indicates NCS_SK_128 or NCS_SK_256
- * @pmk: pairwise master key
  *
  */
 struct ndp_initiator_req {
 	uint32_t transaction_id;
 	uint32_t vdev_id;
 	uint32_t channel;
-	uint32_t channel_cfg;
 	uint32_t service_instance_id;
 	v_MACADDR_t peer_discovery_mac_addr;
 	v_MACADDR_t self_ndi_mac_addr;
 	struct ndp_cfg ndp_config;
 	struct ndp_app_info ndp_info;
-	uint32_t ncs_sk_type;
-	struct ndp_pmk pmk;
 };
 
 /**
@@ -7383,8 +7200,6 @@ struct ndp_initiator_rsp {
  * @ndp_accept_policy: accept policy configured by the upper layer
  * @ndp_config: ndp configuration params
  * @ndp_info: ndp application info
- * @ncs_sk_type: indicates NCS_SK_128 or NCS_SK_256
- * @scid: security context identifier
  *
  */
 struct ndp_indication_event {
@@ -7397,8 +7212,6 @@ struct ndp_indication_event {
 	enum ndp_accept_policy policy;
 	struct ndp_cfg ndp_config;
 	struct ndp_app_info ndp_info;
-	uint32_t ncs_sk_type;
-	struct ndp_scid scid;
 };
 
 /**
@@ -7409,8 +7222,6 @@ struct ndp_indication_event {
  * @ndp_rsp: response to the ndp create request
  * @ndp_config: ndp configuration params
  * @ndp_info: ndp application info
- * @pmk: pairwise master key
- * @ncs_sk_type: indicates NCS_SK_128 or NCS_SK_256
  *
  */
 struct ndp_responder_req {
@@ -7420,8 +7231,6 @@ struct ndp_responder_req {
 	enum ndp_response_code ndp_rsp;
 	struct ndp_cfg ndp_config;
 	struct ndp_app_info ndp_info;
-	struct ndp_pmk pmk;
-	uint32_t ncs_sk_type;
 };
 
 /**
@@ -7439,7 +7248,6 @@ struct ndp_responder_rsp_event {
 	uint32_t status;
 	uint32_t reason;
 	v_MACADDR_t peer_mac_addr;
-	bool create_peer;
 };
 
 /**
@@ -7581,31 +7389,62 @@ struct sir_set_tx_rx_aggregation_size {
 };
 
 /**
- * enum action_filter_type - Type of action frame filter
- * @SME_ACTION_FRAME_RANDOM_MAC_SET: Set filter
- * @SME_ACTION_FRAME_RANDOM_MAC_CLEAR: Clear filter
+ * struct sme_update_access_policy_vendor_ie - update vendor ie and access
+ * policy
+ * @msg_type: message id
+ * @msg_len: message length
+ * @sme_session_id: sme session id
+ * @ie: vendor ie
+ * @access_policy: access policy for vendor ie
  */
-enum action_filter_type {
-	SME_ACTION_FRAME_RANDOM_MAC_SET,
-	SME_ACTION_FRAME_RANDOM_MAC_CLEAR,
+struct sme_update_access_policy_vendor_ie {
+	uint16_t             msg_type;
+	uint16_t             length;
+	uint32_t             sme_session_id;
+	uint8_t              ie[SIR_MAC_MAX_IE_LENGTH];
+	uint8_t              access_policy;
 };
 
-typedef void (*action_frame_random_filter_callback)(bool set_random_addr,
-						    void *context);
 /**
- * struct action_frame_random_filter - Random mac filter attrs for set/clear
- * @session_id: Session interface
- * @filter_type: Type of filter from action_filter_type
- * @callback: Invoked from wmi
- * @context: Parameter to be used with callback
- * @mac_addr: Random mac addr for which filter is to be set
+ * struct sme_tx_fail_cnt_threshold - tx failure count for disconnect to fw
+ * @session_id: Session id
+ * @tx_fail_cnt_threshold: Tx failure count to do disconnect
  */
-struct action_frame_random_filter {
-	uint32_t session_id;
-	enum action_filter_type filter_type;
-	action_frame_random_filter_callback callback;
-	void *context;
-	uint8_t mac_addr[VOS_MAC_ADDR_SIZE];
+struct sme_tx_fail_cnt_threshold {
+	uint8_t session_id;
+	uint32_t tx_fail_cnt_threshold;
 };
 
+/**
+ * struct sme_short_retry_limit - transmission retry limit for short frames.
+ * @session_id: Session id
+ * @short_retry_limit: tranmission retry limit for short frame.
+ *
+ */
+struct sme_short_retry_limit {
+	uint8_t session_id;
+	uint8_t short_retry_limit;
+};
+
+/**
+ * struct sme_long_retry_limit - tranmission retry limit for long frames
+ * @session_id: Session id
+ * @short_retry_limit: tranmission retry limit for long frames.
+ *
+ */
+struct sme_long_retry_limit {
+	uint8_t session_id;
+	uint8_t long_retry_limit;
+};
+
+/**
+ * struct sme_sta_inactivity_timeout - set sta_inactivity_timeout
+ * @session_id: session Id.
+ * @sta_inactivity_timeout: Timeout to disconnect STA after there
+ * is no activity.
+ */
+struct sme_sta_inactivity_timeout {
+	uint8_t session_id;
+	uint32_t sta_inactivity_timeout;
+};
 #endif /* __SIR_API_H */

@@ -90,13 +90,6 @@
 #define LIM_MLM_SETKEYS_CNF         (LIM_MLM_MSG_START + 25)
 #define LIM_MLM_LINK_TEST_STOP_REQ  (LIM_MLM_MSG_START + 30)
 #define LIM_MLM_PURGE_STA_IND       (LIM_MLM_MSG_START + 31)
-#define LIM_MLM_ADDBA_REQ           (LIM_MLM_MSG_START + 32)
-#define LIM_MLM_ADDBA_CNF           (LIM_MLM_MSG_START + 33)
-#define LIM_MLM_ADDBA_IND           (LIM_MLM_MSG_START + 34)
-#define LIM_MLM_ADDBA_RSP           (LIM_MLM_MSG_START + 35)
-#define LIM_MLM_DELBA_REQ           (LIM_MLM_MSG_START + 36)
-#define LIM_MLM_DELBA_CNF           (LIM_MLM_MSG_START + 37)
-#define LIM_MLM_DELBA_IND           (LIM_MLM_MSG_START + 38)
 #define LIM_MLM_REMOVEKEY_REQ  (LIM_MLM_MSG_START + 39)
 #define LIM_MLM_REMOVEKEY_CNF  (LIM_MLM_MSG_START + 40)
 
@@ -193,6 +186,7 @@ typedef struct sLimMlmStartReq
     tANI_U8              ssidHidden;
     tANI_U8              wps_state;
     tANI_U8              obssProtEnabled;
+    uint16_t             beacon_tx_rate;
 } tLimMlmStartReq, *tpLimMlmStartReq;
 
 typedef struct sLimMlmStartCnf
@@ -772,12 +766,6 @@ void limSetChannel(tpAniSirGlobal pMac, tANI_U8 channel, tANI_U8 secChannelOffse
 /// Function that completes channel scan
 void limCompleteMlmScan(tpAniSirGlobal, tSirResultCodes);
 
-#ifdef FEATURE_OEM_DATA_SUPPORT
-/* Function that sets system into meas mode for oem data req */
-void limSetOemDataReqMode(tpAniSirGlobal pMac, eHalStatus status, tANI_U32* data);
-#endif
-
-
 /// Function that sends TPC Request action frame
 void limSendTpcRequestFrame(tpAniSirGlobal, tSirMacAddr, tpPESession psessionEntry);
 
@@ -823,15 +811,6 @@ tANI_U8 limIsLinkSuspended(tpAniSirGlobal pMac);
 void limSuspendLink(tpAniSirGlobal, tSirLinkTrafficCheck, SUSPEND_RESUME_LINK_CALLBACK, tANI_U32*);
 void limResumeLink(tpAniSirGlobal, SUSPEND_RESUME_LINK_CALLBACK, tANI_U32*);
 //end WLAN_SUSPEND_LINK Related
-
-tSirRetStatus limSendAddBAReq( tpAniSirGlobal pMac,
-    tpLimMlmAddBAReq pMlmAddBAReq,tpPESession);
-
-tSirRetStatus limSendAddBARsp( tpAniSirGlobal pMac,
-    tpLimMlmAddBARsp pMlmAddBARsp,tpPESession);
-
-tSirRetStatus limSendDelBAInd( tpAniSirGlobal pMac,
-    tpLimMlmDelBAReq pMlmDelBAReq ,tpPESession psessionEntry);
 
 void limProcessMlmHalAddBARsp( tpAniSirGlobal pMac,
     tpSirMsgQ limMsgQ );
@@ -970,57 +949,6 @@ limGetCurrentScanChannel(tpAniSirGlobal pMac)
 
     return (*(pChanNum + pMac->lim.gLimCurrentScanChannelId));
 } /*** end limGetCurrentScanChannel() ***/
-
-
-
-/**
- * limGetIElenFromBssDescription()
- *
- *FUNCTION:
- * This function is called in various places to get IE length
- * from tSirBssDescription structure
- * number being scanned.
- *
- *PARAMS:
- *
- *LOGIC:
- *
- *ASSUMPTIONS:
- * NA
- *
- *NOTE:
- * NA
- *
- * @param     pBssDescr
- * @return    Total IE length
- */
-
-static inline tANI_U16
-limGetIElenFromBssDescription(tpSirBssDescription pBssDescr)
-{
-    uint16_t ielen;
-
-    if (!pBssDescr)
-        return 0;
-
-    /**
-     * Length of BSS desription is without length of
-     * length itself and length of pointer
-     * that holds ieFields
-     *
-     * <------------sizeof(tSirBssDescription)-------------------->
-     * +--------+---------------------------------+---------------+
-     * | length | other fields                    | pointer to IEs|
-     * +--------+---------------------------------+---------------+
-     *                                            ^
-     *                                            ieFields
-     */
-
-    ielen = ((tANI_U16) (pBssDescr->length + sizeof(pBssDescr->length) +
-                   sizeof(tANI_U32 *) - sizeof(tSirBssDescription)));
-
-    return ielen;
-} /*** end limGetIElenFromBssDescription() ***/
 
 /**
  * limSendBeaconInd()
