@@ -17,3 +17,6 @@ script:
 
 cache:
   - ccache
+
+group: travis_latest
+os: linux
