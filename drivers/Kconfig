@@ -188,6 +188,8 @@ source "drivers/soc/Kconfig"
 
 source "drivers/firmware/Kconfig"
 
+source "drivers/dts_eagle/Kconfig"
+
 #ifdef VENDOR_EDIT
 # hefaxi@filesystem,2015/05/05,support param partion read/write
 source "drivers/param_read_write/Kconfig"
@@ -203,4 +205,5 @@ source "drivers/oem_debug/Kconfig"
 #ted_lin@PerfLab add for op helper function
 source "drivers/op/Kconfig"
 #endif
+
 endmenu
